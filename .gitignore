@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager / compilación
+.build/
+.swiftpm/
+build/
+dist/
+*.app/
+DerivedData/
+xcuserdata/
+
+# Residuos de PyInstaller ajenos a la app (revisar antes de borrar)
+/main.py
+/TuAplicacion.spec
