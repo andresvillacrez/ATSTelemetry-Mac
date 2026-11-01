@@ -347,6 +347,7 @@ windows\run-demo.bat
 
 - [`README.md`](README.md): estado, uso y plan de la app macOS.
 - [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md): plan por fases de la migración a FH6 v2.7.
+- [`FASE-0.md`](FASE-0.md): baseline, hashes y pendientes de la preparación.
 - [`../Windows Native Final/README.md`](../Windows%20Native%20Final/README.md):
   documentación de la app Windows v2.7.
 - `Sources/ATSTelemetry/DashboardView.swift`: implementación visual actual
@@ -372,4 +373,7 @@ datos del perfil.
 El plan por fases, los criterios de aceptación, la matriz de pruebas y los
 riesgos están en [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md).
 
-**Estado:** planificado; no se han hecho cambios de código todavía.
+**Estado:** Fase 0 en curso. Se inicializó git, se creó el commit base
+`2183979 baseline macOS 0.1.0` y se copiaron las referencias visuales de la
+FH6 v2.7. No se modificó código de la app. El detalle está en
+[`FASE-0.md`](FASE-0.md).

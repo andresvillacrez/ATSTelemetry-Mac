@@ -3,7 +3,7 @@
 **Proyecto:** ATS Telemetry para macOS  
 **Base de código:** `Mac Os` — SwiftUI/AppKit 0.1.0  
 **Referencia visual y de comportamiento:** `Windows Native Final` v2.7 (FH6)  
-**Estado:** planificado; Fase 0 pendiente  
+**Estado:** Fase 0 en curso — preparación completada; build y plugin pendientes en macOS  
 **Última actualización:** 31/10/2026
 
 ---
@@ -152,27 +152,31 @@ Resources/
 **Objetivo:** tener una red de seguridad y confirmar que la base actual funciona
 antes de tocar código.
 
-- [ ] **M0-01. Git y baseline.** Inicializar git en `Mac Os`, añadir `.gitignore`
-      (`.build/`, `build/`, `dist/`, `*.app/`, `.DS_Store`) y hacer el commit
-      `baseline macOS 0.1.0`. Antes del commit, revisar `main.py`,
-      `TuAplicacion.spec` y `dist/TuAplicacion.exe`: parecen residuos de un
-      empaquetado PyInstaller ajeno a la app; no borrarlos sin confirmar, pero
-      valorar excluirlos del baseline.
+- [x] **M0-01. Git y baseline.** Repositorio inicializado, `.gitignore` y
+      `.gitattributes` añadidos, commit `2183979 baseline macOS 0.1.0`.
+      `main.py` y `TuAplicacion.spec` se excluyeron del baseline por ser un
+      ejemplo de PyInstaller ajeno a la app; no se borraron del disco.
 - [ ] **M0-02. Compilar la app actual.** Ejecutar `./build_app.sh` y abrir
       `ATS Telemetry.app` en modo demo. Registrar versión de macOS, Swift y GPU.
+      **Pendiente en el Hackintosh.**
 - [ ] **M0-03. Plugin macOS.** Instalar el build macOS de
       `truckermudgeon/scs-sdk-plugin` v1.12.1 en
       `<juego>.app/Contents/MacOS/plugins` y verificar `SDK=1` en
       `/SCSTelemetry`. Si el juego no está disponible, dejar constancia y usar
-      demo.
-- [ ] **M0-04. Capturas de referencia.** Guardar una captura de la app Mac
-      actual y otra de `Windows Native Final/screenshots/fh6-v27-1920.png` en
-      `screenshots/`.
-- [ ] **M0-05. Cerrar decisiones abiertas.** Confirmar clima manual, 30/60 FPS,
-      inclusión de avisos y alcance de finanzas (ver sección 9).
+      demo. **Pendiente en el Hackintosh.**
+- [ ] **M0-04. Capturas de referencia.** Referencia Windows copiada a
+      `screenshots/` (`fh6-v27-1920.png` y `fh6-v27-1280.png`). Falta la
+      captura de la app Mac actual en el Hackintosh.
+- [x] **M0-05. Cerrar decisiones abiertas.** Confirmados clima manual/inferido,
+      30 FPS estables (60 opcional), avisos incluidos, finanzas completas,
+      tipografía SF y binario `x86_64` por ahora.
 
 **Criterio de aceptación:** la app actual compila, abre y (si hay juego) recibe
 telemetría; existe un commit base y capturas de referencia.
+
+**Estado actual:** preparación completada (git, `.gitignore`, referencias y
+decisiones). Pendiente el build, la captura Mac y la prueba del plugin en el
+Hackintosh. El registro detallado está en [`FASE-0.md`](FASE-0.md).
 
 **Estimación:** 0,5–1 día.
 
@@ -422,20 +426,14 @@ puede ejecutarse en paralelo con la Fase 3.
 
 ---
 
-## 11. Primer comando de la Fase 0
+## 11. Comandos de la Fase 0
+
+El baseline git ya está hecho: commit `2183979 baseline macOS 0.1.0`. En el
+Hackintosh quedan el build, la captura y la prueba del plugin:
 
 ```zsh
 cd "/ruta/a/APP Telemetria/Mac Os"
-git init
-cat > .gitignore <<'EOF'
-.build/
-build/
-dist/
-*.app/
-.DS_Store
-EOF
-git add .
-git commit -m "baseline macOS 0.1.0"
+chmod +x build_app.sh
 ./build_app.sh
 open "ATS Telemetry.app" --args --demo
 ```
@@ -459,4 +457,5 @@ open "ATS Telemetry.app"
 | Fecha | Fase | Nota |
 |---|---|---|
 | 31/10/2026 | Plan | Plan creado; sin cambios de código todavía |
-|  |  |  |
+| 31/10/2026 | Fase 0 | Git inicializado; commit base `2183979`; referencias de Windows copiadas; decisiones por defecto confirmadas |
+| 31/10/2026 | Fase 0 | Pendiente en Hackintosh: build, captura Mac y prueba del plugin macOS |

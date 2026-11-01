@@ -8,7 +8,8 @@ plugins de Ajazz.
 > **Estado (31/10/2026):** esta carpeta contiene la base nativa macOS **0.1.0**,
 > anterior al rediseño FH6. El objetivo activo es llevarla a **FH6 v2.7**,
 > usando `Windows Native Final` como referencia visual y de comportamiento.
-> El plan por fases está en [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md).
+> El plan por fases está en [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md) y el estado de
+> la preparación en [`FASE-0.md`](FASE-0.md).
 >
 > La sección [Funcionalidad actual](#funcionalidad-actual-010) describe la
 > versión 0.1.0; **no** es el estado final. Las diferencias con la v2.7 están
@@ -42,7 +43,10 @@ No se portan WinForms, Avalonia ni Wine en esta fase.
 - Lectura POSIX de `/SCSTelemetry` y descifrado del savegame ScsC/BSII.
 - Renderizado a **12 FPS** con el layout anterior a FH6.
 - 14 iconos en `Resources/Indicators`; sin fotos de camiones ni logos.
-- No hay git inicializado en la carpeta.
+- Git inicializado con el commit base `2183979 baseline macOS 0.1.0`; el
+  binario `.app`, `build/` y `dist/` están ignorados.
+- Fase 0 en curso: preparación completada; faltan build, captura Mac y prueba
+  del plugin en el Hackintosh.
 
 La app compilada actual sirve como **línea base** y red de seguridad. La
 migración se hará sin romperla hasta que la nueva vista FH6 esté validada.
@@ -165,10 +169,12 @@ Mac Os/
     TelemetryReader.swift   Offsets REV12 y lectura de /SCSTelemetry
     BankBalanceReader.swift Savegame, ScsC/BSII y saldo
   Resources/Indicators/     Iconos de testigos
+  screenshots/              Referencias visuales de FH6 v2.7
   ATS Telemetry.app         App compilada actual (x86_64)
   build_app.sh              Compilación y empaquetado
   Info.plist                Metadatos del bundle
   PLAN-TRABAJO.md           Plan por fases
+  FASE-0.md                 Registro de la preparación y línea base
   README.md                 Este documento
   HISTORIAL.md              Historial de decisiones y pruebas
 ```
@@ -184,7 +190,7 @@ La estructura objetivo añade `Snap.swift`, `ProfileReader.swift`,
 
 | Fase | Contenido | Estado |
 |---|---|---|
-| 0 | Baseline, git, plugin macOS, capturas | Pendiente |
+| 0 | Baseline, git, plugin macOS, capturas | En curso |
 | 1 | Refactor, tema, layout, telemetry store | Pendiente |
 | 2 | Shell visual FH6 | Pendiente |
 | 3 | Assets y reglas v2.7 (CHECK, crucero, fundido) | Pendiente |
