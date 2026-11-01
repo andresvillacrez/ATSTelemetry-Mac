@@ -228,6 +228,15 @@ especificación visual.
 
 ---
 
+## Ajustes de noche de ATS/ETS2
+
+Los ajustes de iluminación nocturna aplicados a los juegos están documentados
+en [`ajustes-noche/README.md`](ajustes-noche/README.md), con las líneas exactas
+de `config.cfg` y las copias de seguridad. No forman parte de la app; son notas
+para reproducir la configuración en el Hackintosh.
+
+---
+
 ## Historial
 
 El proceso de creación, las decisiones de diseño y el estado de las pruebas de
