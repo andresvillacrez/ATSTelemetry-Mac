@@ -686,25 +686,6 @@ struct HeaderIconButton: View {
     }
 }
 
-struct OdometerPillView: View {
-    let snap: Snap
-
-    private var text: String {
-        guard snap.active, let value = snap.odometer, value >= 0 else { return "--" }
-        return String(Int(value.rounded()))
-    }
-
-    var body: some View {
-        Text(text + " km")
-            .font(.system(size: FS(12), weight: .semibold, design: .monospaced))
-            .foregroundColor(snap.active ? ATSColor.cyan.opacity(0.85) : Theme.textDisabled)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(Theme.surfaceRaised))
-            .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
-    }
-}
-
 // MARK: - Layout mode (v3)
 enum LayoutMode {
     case full, compact, minimal
@@ -923,16 +904,12 @@ struct DashboardContent: View {
                 .frame(width: 600, height: 600)
                 .position(x: 960, y: 548)
 
-            // Marcha + RPM: fila propia debajo del dial, sin tapar km/h ni LÍMITE
+            // Marcha + RPM en fila propia, debajo del dial
             GearBoxView(snap: snap)
                 .position(x: 865, y: 690)
 
             RpmBarView(snap: snap, width: 240)
                 .position(x: 1045, y: 690)
-
-            // Odómetro en línea propia, sin solapar el texto de RPM
-            OdometerPillView(snap: snap)
-                .position(x: 960, y: 760)
 
             if layout.showVerticalGauges {
                 VerticalGaugeView(snap: snap, kind: .water)
@@ -1174,11 +1151,15 @@ struct AdvisoryCardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(message == nil ? Theme.surface : accent.opacity(0.07))
+                .fill(Theme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(accent.opacity(message == nil ? 0 : 0.18), lineWidth: 1)
+                        .fill(accent.opacity(message == nil ? 0 : 0.14 * messages.opacity))
                 )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(accent.opacity(message == nil ? 0 : 0.30 * messages.opacity), lineWidth: 1)
         )
     }
 }
@@ -1267,12 +1248,6 @@ struct HeaderView: View {
         return "\(brand) \(name)".uppercased()
     }
 
-    private var displacement: String? {
-        guard snap.active else { return nil }
-        return engineDisplacement(for: snap.truckId)
-            ?? engineDisplacement(for: snap.truckName)
-    }
-
     private var gameClock: String {
         guard snap.active, let t = snap.gameTime else { return "--:--" }
         let minutes = Int(t)
@@ -1344,57 +1319,25 @@ struct HeaderView: View {
                 }
             }
 
-            HStack(spacing: 10) {
+            Group {
                 if let brand = snap.truckBrand,
                    let logo = BrandLogoLoader.image(brand: brand) {
                     Image(nsImage: logo)
                         .resizable()
                         .interpolation(.high)
                         .scaledToFit()
-                        .frame(height: 32)
-                }
-
-                VStack(spacing: 1) {
+                        .frame(height: 48)
+                } else {
                     Text(truckRef)
                         .font(.system(size: FS(17), weight: .semibold, design: .default))
                         .tracking(2.4)
                         .foregroundColor(.white.opacity(0.82))
                         .lineLimit(1)
-
-                    if let displacement {
-                        Text(displacement)
-                            .font(.system(size: FS(10.5), weight: .regular, design: .default))
-                            .tracking(1.4)
-                            .foregroundColor(.white.opacity(0.50))
-                    }
                 }
             }
         }
         .frame(height: 60)
     }
-}
-
-private func engineDisplacement(for value: String?) -> String? {
-    guard let raw = value?.lowercased(), !raw.isEmpty else { return nil }
-
-    // ATS does not expose engine displacement through telemetry. These are the
-    // reference displacements for the default engine of each truck model.
-    if raw.contains("t800") { return "11.9L" }
-    if raw.contains("w900") { return "14.9L" }
-    if raw.contains("t680") { return "12.9L" }
-    if raw.contains("389") { return "12.9L" }
-    if raw.contains("579") { return "12.9L" }
-    if raw.contains("cascadia") { return "12.8L" }
-    if raw.contains("49x") { return "12.8L" }
-    if raw.contains("5700") { return "12.8L" }
-    if raw.contains("57x") { return "12.8L" }
-    if raw.contains("anthem") { return "12.8L" }
-    if raw.contains("pinnacle") { return "12.8L" }
-    if raw.contains("vnl") { return "12.8L" }
-    if raw.contains("lonestar") { return "12.4L" }
-    if raw.contains("9900") { return "14.9L" }
-    if raw.contains(".lt") || raw == "lt" { return "12.4L" }
-    return nil
 }
 
 // MARK: - Footer
@@ -1667,7 +1610,7 @@ struct DamagePanelView: View {
 
             if snap.active {
                 let key = TruckImageLoader.name(for: snap)
-                ZStack(alignment: .bottomLeading) {
+                ZStack(alignment: .bottom) {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Theme.surfaceRaised)
 
@@ -1691,6 +1634,24 @@ struct DamagePanelView: View {
                                 .foregroundColor(Theme.textDisabled)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(0.62)],
+                        startPoint: .center,
+                        endPoint: .bottom
+                    )
+
+                    if let model = snap.truckName, !model.isEmpty {
+                        Text(model.uppercased())
+                            .font(.system(size: FS(11.5), weight: .bold, design: .default))
+                            .tracking(1.4)
+                            .foregroundColor(.white.opacity(0.95))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.black.opacity(0.55)))
+                            .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
+                            .padding(.bottom, 8)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -1784,9 +1745,7 @@ struct SpeedArcView: View {
     let accent: Color
     let valueText: String
     let unitText: String
-    let subtitle: String
-    let markerValue: Double?   // limit km/h
-    let markerColor: Color
+    let odometerText: String
 
     private let startDeg = 158.0
     private let sweepDeg = 224.0
@@ -1840,21 +1799,7 @@ struct SpeedArcView: View {
                                   y: center.y + sin(rad) * labelRadius)
                 }
 
-                // Limit marker
-                if let mv = markerValue {
-                    let frac = min(1, max(0, mv / maxValue))
-                    let deg = startDeg + frac * sweepDeg
-                    let rad = deg * .pi / 180
-                    Path { p in
-                        p.move(to: CGPoint(x: center.x + cos(rad) * (radius - 10),
-                                           y: center.y + sin(rad) * (radius - 10)))
-                        p.addLine(to: CGPoint(x: center.x + cos(rad) * (radius + 26),
-                                              y: center.y + sin(rad) * (radius + 26)))
-                    }
-                    .stroke(markerColor, lineWidth: 3)
-                }
-
-                // Center number + unit + limit chip
+                // Center number + unit + odometer
                 VStack(spacing: 4) {
                     Text(valueText)
                         .font(.system(size: FS(184), weight: .light, design: .default))
@@ -1865,12 +1810,12 @@ struct SpeedArcView: View {
                         .font(.system(size: FS(14), weight: .medium, design: .default))
                         .foregroundColor(.white.opacity(0.55))
 
-                    Text(subtitle)
-                        .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                        .tracking(1.0)
-                        .foregroundColor(.white.opacity(0.58))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
+                    Text(odometerText)
+                        .font(.system(size: FS(16), weight: .semibold, design: .monospaced))
+                        .tracking(0.6)
+                        .foregroundColor(.white.opacity(0.72))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
                         .background(Capsule().fill(Theme.surfaceRaised))
                         .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
                 }
@@ -2053,15 +1998,8 @@ struct SpeedometerView: View {
         abs(Double(snap.speed ?? 0)) * 3.6
     }
 
-    private var limitKmh: Double? {
-        guard snap.active, let limit = snap.limit, limit > 0.5 else { return nil }
-        return Double(limit) * 3.6
-    }
-
     private var accent: Color {
-        guard snap.active else { return Color.white.opacity(0.30) }
-        if let limitKmh, speedKmh > limitKmh + 1.0 { return ATSColor.orange }
-        return ATSColor.cyan
+        snap.active ? ATSColor.cyan : Color.white.opacity(0.30)
     }
 
     private var valueText: String {
@@ -2069,11 +2007,20 @@ struct SpeedometerView: View {
         return String(Int(speedKmh.rounded()))
     }
 
-    private var subtitle: String {
-        if let limitKmh {
-            return "LÍMITE \(Int(limitKmh.rounded()))"
-        }
-        return "MÁX \(Int(maxSpeed))"
+    private static let odometerFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "es_ES")
+        formatter.maximumFractionDigits = 0
+        formatter.usesGroupingSeparator = true
+        return formatter
+    }()
+
+    private var odometerText: String {
+        guard snap.active, let odometer = snap.odometer, odometer >= 0 else { return "-- km" }
+        let value = Int(odometer.rounded())
+        let formatted = Self.odometerFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
+        return "\(formatted) km"
     }
 
     private var cruiseSetKmh: Double? {
@@ -2097,9 +2044,7 @@ struct SpeedometerView: View {
                 accent: accent,
                 valueText: valueText,
                 unitText: "km/h",
-                subtitle: subtitle,
-                markerValue: limitKmh,
-                markerColor: ATSColor.red
+                odometerText: odometerText
             )
 
             GaugeBadge(active: cruiseSetKmh != nil, accent: ATSColor.green) {
@@ -2934,6 +2879,10 @@ struct CompactFuelPanelView: View {
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(snap.active ? color.opacity(0.08) : .clear)
+                )
         )
         .onChange(of: snap.engine) { _, newValue in
             if newValue && !prevEngine { ignitionStart = Date() }
@@ -3193,6 +3142,10 @@ struct WeatherPanelView: View {
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(snap.active ? accent.opacity(0.08) : .clear)
+                )
         )
     }
 }
@@ -3753,18 +3706,7 @@ struct FuelBarView: View {
                     .fill(Color.white.opacity(0.045))
 
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                ATSColor.red,
-                                ATSColor.orange,
-                                ATSColor.yellow,
-                                ATSColor.green
-                            ],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                    )
+                    .fill(color)
                     .frame(height: fillHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .shadow(color: color.opacity(0.35), radius: 16)

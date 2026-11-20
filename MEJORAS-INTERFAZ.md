@@ -97,6 +97,9 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Un solo lienzo 1920×1080 escalable: Full, Compact (1280×720) y Minimal (960×540) ya no se recortan.
 - [x] CHECK ENGINE centrado en la fila de testigos (7 testigos a cada lado).
 - [x] Tarjetas de Combustible, Avisos y Clima sin título, con contenido centrado horizontal y verticalmente.
+- [x] Tinte de estado: Combustible según nivel/color de barra, Clima según condición y Avisos según tipo de mensaje (con su fade).
+- [x] Logo de marca centrado y ampliado; modelo del camión movido al pie de la imagen de Daños.
+- [x] Eliminado el límite de velocidad del velocímetro; odómetro integrado y más grande.
 
 ### Validación
 - [x] Build release sin errores.
