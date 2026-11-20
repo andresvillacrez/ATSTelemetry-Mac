@@ -78,7 +78,7 @@ Registro de instalación del plugin:
 Si macOS bloquea el instalador por no estar firmado:
   clic derecho sobre el .pkg > Abrir.
 
-El instalador no incluye ETS2; si ETS2 no está instalado, simplemente se omite.
+El instalador no instala ETS2; si el juego no está presente, ese paso se omite.
 TXT
 
 echo "4/4 Verificando..."
@@ -87,4 +87,5 @@ pkgutil --payload-files "$PKG" | /usr/bin/sed -n '1,12p'
 echo ""
 echo "Instalador listo: $PKG"
 ls -lh "$PKG"
-shasum -a 256 "$PKG" | tee "$PKG.sha256"
+cd "$ROOT"
+shasum -a 256 "$(basename "$PKG")" | tee "$(basename "$PKG").sha256"
