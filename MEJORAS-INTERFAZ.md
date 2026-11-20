@@ -12,6 +12,12 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 
 ## Mejoras de interfaz aplicadas (2026-11-20) — Bloque A completado
 
+### Bloque D — Release
+- [x] Documentación actualizada (README.md, PLAN-TRABAJO.md).
+- [x] Tag `mac-v2.7.0` creado.
+- [x] App final compilada (`ATS Telemetry.app`).
+- [x] ZIP de distribución generado (`ATS-Telemetry-macOS-2.7.0.zip`).
+
 ### Pendiente opcional (alto riesgo)
 - Drag & drop de layout (Ctrl+Shift+E) — requiere refactor mayor de posiciones.
 - Empresa: conductores/egresos en detalle expandible (requiere datos).
@@ -46,7 +52,7 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Título de ventana claro/oscuro según tema (aplicado al arrancar y al cambiar).
 - [x] Submenús con texto claro (apariencia darkAqua forzada).
 - [x] Marcos de panel cacheados (drawingGroup en paneles y tarjetas).
-- [x] Reflow completo para 150 % (LayoutMode considera uiScale).
+- [~] Reflow 150 %: el lienzo ya no se recorta; quedan ajustes internos en tarjetas (parcial).
 - [x] Consumo L/100 km / MPG / gal en combustible con selector en Ajustes.
 - [x] Clima eliminado del menú de bandeja (modo automático fijo).
 - [x] Ajustes se abre por delante del panel principal.
@@ -58,6 +64,42 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Gauges de aire/temperatura reducidos 20 % y barra engrosada.
 - [x] Versión del bundle actualizada a **2.7.0**.
 - [x] Build verificado sin errores.
+
+## Rediseño de interfaz v3.1 (2026-11-20)
+
+### Ronda 1 — Solapamientos, clipping y duplicados
+- [x] Cluster recentrado: marcha, RPM y odómetro en filas propias; `km/h` y `LÍMITE` ya no quedan tapados.
+- [x] Testigos de batería/aceite fuera de los dígitos de velocidad; crucero sobre el número, no dentro del arco.
+- [x] GPS: corregido el porcentaje literal, eliminadas coordenadas duplicadas y `TripBadge`; una sola fila de ruta.
+- [x] Clima y combustible ensanchados a 280 px; sin recortes de `DESPEJADO`/`NUBLADO` ni del consumo.
+- [x] Daños: imagen con fallback por marca (T680 para T800), sin caption ni leyenda 5/20/50; el contenido ya cabe.
+- [x] Cabecera: estado único (DEMO/EN LÍNEA/PAUSA) y camión sin duplicar la marca junto al logo.
+- [x] Pie: versión real del bundle y sin estados duplicados.
+- [x] Eliminados badges DEMO de Avisos/Clima y `TRABAJO ACTUAL`/`INTEGRIDAD` de Carga.
+- [x] Carga con una sola unidad de peso y `CARGADA` en verde; consumo coherente con la unidad elegida.
+- [x] Fila inferior alineada: 280 / 400 / 280 entre los paneles laterales.
+
+### Ronda 2 — Legibilidad y jerarquía
+- [x] Escala tipográfica sin tamaños de 6–9 pt en elementos visibles; etiquetas a 10–11, títulos 13, héroes 24–30.
+- [x] `PanelHeader` único en todos los paneles (icono 14, título 13, tracking 2.4, estado 10).
+- [x] Opacidades de texto unificadas; etiquetas secundarias más contrastadas.
+- [x] Colores semánticos: verde positivo/cargado, cian información, ámbar aviso, rojo crítico.
+- [x] Gauges verticales con unidad visible, valor por umbral, mín/máx alineados y contenedor propio.
+- [x] Testigos normalizados a 40 px, inactivos al 30 %, iconos monocromos coloreados por estado.
+- [x] Cruise badge y chip de límite legibles; sombras decorativas reducidas.
+
+### Ronda 3 — Minimalismo y consistencia
+- [x] Radios unificados (paneles 24, tarjetas 20, chips 8) y superficie de panel al 3 %.
+- [x] Logo de empresa sin fondo blanco conectado a los bordes + chip oscuro.
+- [x] Botones de cabecera solo icono con tooltip; retirado `SALIR` del pie.
+- [x] Título de ventana `ATS Telemetry · Claro` / `· Alto contraste`.
+- [x] Eliminada la barra de margen, la leyenda de daños y el caption del camión.
+- [x] Un solo lienzo 1920×1080 escalable: Full, Compact (1280×720) y Minimal (960×540) ya no se recortan.
+
+### Validación
+- [x] Build release sin errores.
+- [x] Demo Full 1904×1039, Compact 1280×720 y Minimal 960×540 sin solapamientos ni clipping.
+- [ ] Prueba en vivo con ATS (pendiente de sesión real).
 
 ## Mejoras de interfaz pendientes (v3.2.0)
 - [ ] Pulso sin ampliación (solo opacidad) en testigos con pulso.

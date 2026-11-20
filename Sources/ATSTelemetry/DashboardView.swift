@@ -42,7 +42,20 @@ enum TruckImageLoader {
         for c in candidates {
             if load(c) != nil { return c }
         }
+        if let brand = snap.truckBrand, let fallback = fallbackName(for: brand) {
+            return fallback
+        }
         return candidates.first
+    }
+
+    // Si el modelo exacto no existe (p. ej. T800), usa la primera imagen de la marca.
+    private static func fallbackName(for brand: String) -> String? {
+        let key = brand.lowercased().replacingOccurrences(of: " ", with: "_")
+        guard let urls = Bundle.main.urls(forResourcesWithExtension: "jpg", subdirectory: "TruckImages") else { return nil }
+        let match = urls.first {
+            $0.deletingPathExtension().lastPathComponent.lowercased().hasPrefix(key)
+        }
+        return match?.deletingPathExtension().lastPathComponent
     }
 
     static func image(named name: String?) -> NSImage? {
@@ -67,22 +80,99 @@ enum TruckImageLoader {
 // MARK: - Company logo loader (FH6)
 enum CompanyLogoLoader {
     private static var cache: [String: NSImage] = [:]
+
     static func image(named name: String?) -> NSImage? {
         guard let name, !name.isEmpty else { return nil }
         if let c = cache[name] { return c }
         let base = name.replacingOccurrences(of: ".png", with: "")
-        if let url = Bundle.main.url(forResource: base, withExtension: "png", subdirectory: "CompanyLogos"),
-           let img = NSImage(contentsOf: url) { cache[name] = img; return img }
-        if let url = Bundle.main.url(forResource: base, withExtension: "png"),
-           let img = NSImage(contentsOf: url) { cache[name] = img; return img }
-        return nil
+
+        var loaded: NSImage? = nil
+        if let url = Bundle.main.url(forResource: base, withExtension: "png", subdirectory: "CompanyLogos") {
+            loaded = NSImage(contentsOf: url)
+        }
+        if loaded == nil, let url = Bundle.main.url(forResource: base, withExtension: "png") {
+            loaded = NSImage(contentsOf: url)
+        }
+        guard let loaded else { return nil }
+
+        let processed = strippingWhiteBackground(loaded) ?? loaded
+        cache[name] = processed
+        return processed
+    }
+
+    /// Quita el fondo blanco conectado a los bordes para que el logo se integre
+    /// en el panel oscuro. Conserva los blancos interiores del propio logo.
+    private static func strippingWhiteBackground(_ image: NSImage) -> NSImage? {
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let cg = rep.cgImage else { return nil }
+
+        let w = cg.width
+        let h = cg.height
+        guard w > 1, h > 1 else { return nil }
+
+        let bytesPerRow = w * 4
+        guard let ctx = CGContext(
+            data: nil,
+            width: w,
+            height: h,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let data = ctx.data else { return nil }
+        let px = data.bindMemory(to: UInt8.self, capacity: w * h * 4)
+        var visited = [Bool](repeating: false, count: w * h)
+        var queue = [Int]()
+        queue.reserveCapacity(w * h / 3)
+
+        func isWhite(_ index: Int) -> Bool {
+            let p = index * 4
+            return px[p] > 235 && px[p + 1] > 235 && px[p + 2] > 235
+        }
+
+        for x in 0..<w {
+            queue.append(x)
+            queue.append((h - 1) * w + x)
+        }
+        for y in 0..<h {
+            queue.append(y * w)
+            queue.append(y * w + w - 1)
+        }
+
+        var head = 0
+        while head < queue.count {
+            let index = queue[head]
+            head += 1
+            if visited[index] { continue }
+            visited[index] = true
+            guard isWhite(index) else { continue }
+
+            let p = index * 4
+            px[p] = 0
+            px[p + 1] = 0
+            px[p + 2] = 0
+            px[p + 3] = 0
+
+            let x = index % w
+            let y = index / w
+            if x > 0 { queue.append(index - 1) }
+            if x < w - 1 { queue.append(index + 1) }
+            if y > 0 { queue.append(index - w) }
+            if y < h - 1 { queue.append(index + w) }
+        }
+
+        guard let out = ctx.makeImage() else { return nil }
+        return NSImage(cgImage: out, size: image.size)
     }
 }
 
 private func companyLogoImage(named name: String?) -> NSImage? {
     CompanyLogoLoader.image(named: name)
 }
-
 // MARK: - Brand logo loader (FH6)
 enum BrandLogoLoader {
     private static var cache: [String: NSImage] = [:]
@@ -112,7 +202,7 @@ enum AdvisoryType {
         case .success: return ATSColor.green
         case .warning: return ATSColor.yellow
         case .danger: return ATSColor.red
-        case .info: return ATSColor.orange
+        case .info: return ATSColor.cyan
         }
     }
     var icon: String {
@@ -361,6 +451,7 @@ enum L10n {
             "damage.trailer": "TRÁILER",
             "cargo.empty": "VACÍA",
             "damage.truck": "CAMIÓN",
+            "damage.cargo": "CARGA",
             "cargo.loaded": "CARGADA",
             "cargo.trailer": "EN REMOLQUE",
             "gps.onroute": "EN RUTA",
@@ -436,6 +527,7 @@ enum L10n {
             "damage.trailer": "TRAILER",
             "cargo.empty": "EMPTY",
             "damage.truck": "TRUCK",
+            "damage.cargo": "CARGO",
             "cargo.loaded": "LOADED",
             "cargo.trailer": "ON TRAILER",
             "gps.onroute": "ON ROUTE",
@@ -452,7 +544,7 @@ enum Theme {
     // Superficies
     static let backgroundTop = Color(red: 0.039, green: 0.047, blue: 0.059)
     static let backgroundBottom = Color(red: 0.027, green: 0.035, blue: 0.043)
-    static let surface = Color.white.opacity(0.022)
+    static let surface = Color.white.opacity(0.030)
     static let surfaceRaised = Color.white.opacity(0.035)
     static let stroke = Color.white.opacity(0.07)
     static let strokeStrong = Color.white.opacity(0.12)
@@ -469,8 +561,8 @@ enum Theme {
     static let danger = ATSColor.red
     static let info = ATSColor.blue
     // Radios
-    static let radiusChip: CGFloat = 12
-    static let radiusCard: CGFloat = 16
+    static let radiusChip: CGFloat = 8
+    static let radiusCard: CGFloat = 20
     static let radiusPanel: CGFloat = 24
     // Espaciado (retícula 8)
     static let space1: CGFloat = 8
@@ -492,6 +584,127 @@ enum TypeScale {
 
 
 
+
+// MARK: - Shared UI atoms (v3.1)
+struct PanelHeader: View {
+    let icon: String
+    let title: String
+    var status: String? = nil
+    var statusColor: Color = Theme.textSecondary
+    var iconColor: Color = Theme.accent
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: FS(14), weight: .semibold))
+                .foregroundColor(iconColor)
+                .frame(width: 18)
+
+            Text(title)
+                .font(.system(size: FS(13), weight: .bold, design: .default))
+                .tracking(2.4)
+                .foregroundColor(Theme.textSecondary)
+
+            Spacer(minLength: 6)
+
+            if let status, !status.isEmpty {
+                Text(status)
+                    .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
+                    .tracking(1.4)
+                    .foregroundColor(statusColor)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+struct MetricBlock: View {
+    let label: String
+    let value: String
+    var color: Color = Theme.textPrimary
+    var valueSize: CGFloat = 20
+    var trailing = false
+
+    var body: some View {
+        VStack(alignment: trailing ? .trailing : .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: FS(10), weight: .bold, design: .default))
+                .tracking(1.4)
+                .foregroundColor(Theme.textTertiary)
+                .lineLimit(1)
+
+            Text(value)
+                .font(.system(size: FS(valueSize), weight: .bold, design: .default))
+                .monospacedDigit()
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.62)
+        }
+    }
+}
+
+struct SmallChip: View {
+    var icon: String? = nil
+    let text: String
+    var color: Color = Theme.textSecondary
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: FS(10), weight: .semibold))
+            }
+            Text(text)
+                .font(.system(size: FS(10), weight: .semibold, design: .default))
+                .tracking(0.8)
+                .lineLimit(1)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(color.opacity(0.09)))
+        .overlay(Capsule().stroke(color.opacity(0.20), lineWidth: 1))
+    }
+}
+
+struct HeaderIconButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: FS(13), weight: .semibold))
+                .foregroundColor(Theme.textSecondary)
+                .frame(width: 32, height: 26)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.surfaceRaised))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.stroke, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+}
+
+struct OdometerPillView: View {
+    let snap: Snap
+
+    private var text: String {
+        guard snap.active, let value = snap.odometer, value >= 0 else { return "--" }
+        return String(Int(value.rounded()))
+    }
+
+    var body: some View {
+        Text(text + " km")
+            .font(.system(size: FS(12), weight: .semibold, design: .monospaced))
+            .foregroundColor(snap.active ? ATSColor.cyan.opacity(0.85) : Theme.textDisabled)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Theme.surfaceRaised))
+            .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
+    }
+}
+
 // MARK: - Layout mode (v3)
 enum LayoutMode {
     case full, compact, minimal
@@ -502,12 +715,10 @@ enum LayoutMode {
         if effectiveW >= 1024 && effectiveH >= 576 { return .compact }
         return .minimal
     }
-    var canvasWidth: CGFloat {
-        switch self { case .full: return 1920; case .compact: return 1280; case .minimal: return 960 }
-    }
-    var canvasHeight: CGFloat {
-        switch self { case .full: return 1080; case .compact: return 720; case .minimal: return 540 }
-    }
+    // Un solo lienzo para todas las densidades: el layout se escala completo
+    // y nunca se recorta al reducir la ventana (1280x720, 960x540, etc.).
+    var canvasWidth: CGFloat { 1920 }
+    var canvasHeight: CGFloat { 1080 }
     var showVerticalGauges: Bool { self == .full }
     var showDetailRows: Bool { self == .full }
     var showBottomCards: Bool { self != .minimal }
@@ -637,7 +848,9 @@ struct DashboardView: View {
         GeometryReader { geo in
             let uiScale = UserDefaults.standard.double(forKey: "ATS.uiScale") == 0 ? 1.0 : UserDefaults.standard.double(forKey: "ATS.uiScale")
             let layout = LayoutMode.forSize(geo.size.width, geo.size.height, uiScale: uiScale)
-            let scale = min(geo.size.width / layout.canvasWidth, geo.size.height / layout.canvasHeight) * uiScale
+            // La escala de UI afecta a la tipografía (FS), no al lienzo:
+            // multiplicar aquí recortaba todo el dashboard al 125/150 %.
+            let scale = min(geo.size.width / layout.canvasWidth, geo.size.height / layout.canvasHeight)
 
             ZStack {
                 Color.black
@@ -695,94 +908,82 @@ struct DashboardContent: View {
 
     var body: some View {
         ZStack {
-            // Cabecera (y = 15..70, linea inferior en y = 92)
+            // Cabecera
             HeaderView(snap: snap, layout: layout)
                 .frame(width: 1920, height: 60)
                 .position(x: 960, y: 40)
 
-            // Fila de testigos (centrada, y = 108..166)
+            // Fila de testigos
             IndicatorRowView(snap: snap)
                 .frame(width: 1920, height: 58)
                 .position(x: 960, y: 137)
 
-            // Cluster central (centro 960,548, radio 302)
+            // Cluster central
             SpeedometerView(snap: snap)
                 .frame(width: 600, height: 600)
-            .frame(width: 604, height: 604)
-            .position(x: 960, y: 548)
+                .position(x: 960, y: 548)
 
-            // Minipanel de distancia (dentro del panel de GPS, parte inferior)
-            TripBadgeView(snap: snap)
-                .frame(width: 220, height: 80)
-                .position(x: 1656, y: 880)
-
-            // Caja de marcha (FH6: 70x64 en y=592)
+            // Marcha + RPM: fila propia debajo del dial, sin tapar km/h ni LÍMITE
             GearBoxView(snap: snap)
-                .position(x: 960, y: 624)
+                .position(x: 865, y: 690)
 
-            // Barra de RPM (FH6: 330x14 en y=710)
-            RpmBarView(snap: snap)
-                .position(x: 960, y: 717)
+            RpmBarView(snap: snap, width: 240)
+                .position(x: 1045, y: 690)
+
+            // Odómetro en línea propia, sin solapar el texto de RPM
+            OdometerPillView(snap: snap)
+                .position(x: 960, y: 760)
 
             if layout.showVerticalGauges {
-                // Agua vertical (x=486, y=300, 88x440)
                 VerticalGaugeView(snap: snap, kind: .water)
-                    .frame(width: 70, height: 352)
-                    .position(x: 530, y: 520)
+                    .frame(width: 84, height: 352)
+                    .position(x: 522, y: 520)
 
-                // Aire vertical (x=1346, y=300, 88x440)
                 VerticalGaugeView(snap: snap, kind: .air)
-                    .frame(width: 70, height: 352)
-                    .position(x: 1390, y: 520)
+                    .frame(width: 84, height: 352)
+                    .position(x: 1398, y: 520)
             }
 
             if layout.showSidePanels {
-            // Empresa (x=64, y=116, 400x380)
-            FinancialPanelView(snap: snap)
-                .frame(width: 400, height: 380)
-                .drawingGroup()
-                .position(x: 264, y: 306)
+                FinancialPanelView(snap: snap)
+                    .frame(width: 400, height: 380)
+                    .drawingGroup()
+                    .position(x: 264, y: 306)
 
-            // Carga (x=64, y=512, 400x424)
-            CargoPanelView(snap: snap)
-                .frame(width: 400, height: 424)
-                .drawingGroup()
-                .position(x: 264, y: 724)
+                CargoPanelView(snap: snap)
+                    .frame(width: 400, height: 424)
+                    .drawingGroup()
+                    .position(x: 264, y: 724)
 
-            // Danos (x=1456, y=116, 400x380)
-            DamagePanelView(snap: snap)
-                .frame(width: 400, height: 380)
-                .drawingGroup()
-                .position(x: 1656, y: 306)
+                DamagePanelView(snap: snap)
+                    .frame(width: 400, height: 380)
+                    .drawingGroup()
+                    .position(x: 1656, y: 306)
 
-            // GPS (x=1456, y=512, 400x424)
-            GPSPanelView(snap: snap)
-                .frame(width: 400, height: 424)
-                .drawingGroup()
-                .position(x: 1656, y: 724)
+                GPSPanelView(snap: snap)
+                    .frame(width: 400, height: 424)
+                    .drawingGroup()
+                    .position(x: 1656, y: 724)
             }
 
             if layout.showBottomCards {
-            // Combustible (x=486, y=794, 240x142)
-            CompactFuelPanelView(snap: snap)
-                .frame(width: 240, height: 142)
-                .drawingGroup()
-                .position(x: 606, y: 865)
+                // Fila inferior alineada con los paneles laterales: 464 ... 1456
+                CompactFuelPanelView(snap: snap)
+                    .frame(width: 280, height: 142)
+                    .drawingGroup()
+                    .position(x: 604, y: 865)
 
-            // Avisos (x=742, y=794, 438x142)
-            AdvisoryCardView(snap: snap, messages: messages)
-                .frame(width: 438, height: 142)
-                .drawingGroup()
-                .position(x: 961, y: 865)
+                AdvisoryCardView(snap: snap, messages: messages)
+                    .frame(width: 400, height: 142)
+                    .drawingGroup()
+                    .position(x: 960, y: 865)
 
-            // Clima (x=1196, y=794, 237x142)
-            WeatherPanelView(snap: snap)
-                .frame(width: 237, height: 142)
-                .drawingGroup()
-                .position(x: 1314, y: 865)
+                WeatherPanelView(snap: snap)
+                    .frame(width: 280, height: 142)
+                    .drawingGroup()
+                    .position(x: 1316, y: 865)
             }
 
-            // Pie (linea en y=984, texto en y=1008)
             FooterView(snap: snap)
                 .frame(width: 1920, height: 76)
                 .position(x: 960, y: 1042)
@@ -805,6 +1006,8 @@ struct VerticalGaugeView: View {
     private func smoothStep(_ t: Double) -> Double {
         let c = min(1, max(0, t)); return c*c*(3-2*c)
     }
+
+    private var isImperial: Bool { UserDefaults.standard.integer(forKey: "ATS.units") == 1 }
 
     private var realFraction: Double {
         switch kind {
@@ -839,74 +1042,76 @@ struct VerticalGaugeView: View {
 
     private var topLabel: String { kind == .water ? (isImperial ? "248" : "120") : "120" }
     private var bottomLabel: String { kind == .water ? (isImperial ? "104" : "40") : "0" }
-    private var isImperial: Bool { UserDefaults.standard.integer(forKey: "ATS.units") == 1 }
     private var unit: String {
         if kind == .water { return isImperial ? "°F" : "°C" }
         return "PSI"
     }
-    private var title: String { kind == .water ? "TEMPERATURA" : "PRESIÓN" }
+    private var title: String { kind == .water ? L10n.t("gauge.water") : L10n.t("gauge.air") }
+    private var symbol: String { kind == .water ? "thermometer.medium" : "wind" }
 
     private var barColor: Color {
         switch kind {
         case .water:
-            // azul -> cian -> verde -> amarillo -> naranja -> rojo
-            let f = fraction
-            if f < 0.25 { return ATSColor.blue }
-            if f < 0.5 { return ATSColor.cyan }
-            if f < 0.65 { return ATSColor.green }
-            if f < 0.8 { return ATSColor.yellow }
-            if f < 0.9 { return ATSColor.orange }
+            if fraction < 0.55 { return ATSColor.cyan }
+            if fraction < 0.85 { return ATSColor.green }
+            if fraction < 0.95 { return ATSColor.yellow }
             return ATSColor.red
         case .air:
-            // rojo (vacio) -> cian (lleno)
-            let f = fraction
-            if f < 0.25 { return ATSColor.red }
-            if f < 0.5 { return ATSColor.orange }
-            if f < 0.75 { return ATSColor.yellow }
+            if fraction < 0.25 { return ATSColor.red }
+            if fraction < 0.50 { return ATSColor.orange }
+            if fraction < 0.70 { return ATSColor.yellow }
             return ATSColor.cyan
         }
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
+            Text(topLabel)
+                .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
+                .foregroundColor(Theme.textTertiary)
+
             ZStack(alignment: .bottom) {
-                RoundedRectangle(cornerRadius: 5)
-                    .fill(Color.white.opacity(0.06))
-                    .frame(width: 14, height: 253)
-                RoundedRectangle(cornerRadius: 5)
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Theme.surfaceRaised)
+                    .frame(width: 16, height: 216)
+
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(barColor)
-                    .frame(width: 10, height: 316 * fraction)
-
-                // Etiquetas en los extremos
-                Text(topLabel)
-                    .font(.system(size: FS(9), weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.55))
-                    .offset(x: -26, y: -306)
-                Text(bottomLabel)
-                    .font(.system(size: FS(9), weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.55))
-                    .offset(x: -26, y: 0)
+                    .frame(width: 10, height: max(0, 216 * fraction))
             }
-            .frame(width: 88, height: 316, alignment: .bottom)
+            .frame(width: 84, height: 216)
 
-            VStack(spacing: 2) {
+            Text(bottomLabel)
+                .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
+                .foregroundColor(Theme.textTertiary)
+
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value.map { String(Int($0.rounded())) } ?? "--")
                     .font(.system(size: FS(28), weight: .semibold, design: .default))
-                    .foregroundColor(.white)
+                    .monospacedDigit()
+                    .foregroundColor(snap.active ? barColor : Theme.textDisabled)
                 Text(unit)
-                    .font(.system(size: FS(10), weight: .regular, design: .default))
-                    .foregroundColor(.white.opacity(0.6))
-                Text(title)
-                    .font(.system(size: FS(6.5), weight: .semibold, design: .default))
-                    .tracking(1.2)
-                    .foregroundColor(.white.opacity(0.55))
+                    .font(.system(size: FS(11), weight: .semibold, design: .default))
+                    .foregroundColor(Theme.textSecondary)
             }
-            .frame(width: 88, height: 103)
+            .padding(.top, 2)
+
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: FS(10), weight: .semibold))
+                Text(title)
+                    .font(.system(size: FS(10), weight: .bold, design: .default))
+                    .tracking(0.5)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundColor(Theme.textTertiary)
         }
-        .frame(width: 70, height: 352)
+        .padding(.vertical, 12)
+        .frame(width: 84, height: 352)
         .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.022))
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Theme.surface)
         )
         .onChange(of: snap.engine) { _, newValue in
             if newValue && !prevEngine { ignitionStart = Date() }
@@ -940,51 +1145,53 @@ struct AdvisoryCardView: View {
     let snap: Snap
     @ObservedObject var messages: GameMessageStore
 
-    private var status: String {
-        if snap.demo { return "DEMO" }
-        return snap.active ? "EN VIVO" : L10n.t("no.signal")
-    }
-
     private var message: String? { messages.currentMessage }
+    private var accent: Color { messages.currentType.color }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: messages.currentType.icon)
-                    .foregroundColor(messages.currentType.color)
-                    .font(.system(size: FS(14)))
-                Text(L10n.t("panel.advisory"))
-                    .font(.system(size: FS(11), weight: .semibold, design: .default))
-                    .tracking(2)
-                    .foregroundColor(.white.opacity(0.7))
-                Spacer()
-                Text(status)
-                    .font(.system(size: FS(10), weight: .medium, design: .default))
-                    .foregroundColor(.white.opacity(0.55))
-            }
-            Spacer()
+        VStack(alignment: .leading, spacing: 8) {
+            PanelHeader(
+                icon: messages.currentType.icon,
+                title: L10n.t("panel.advisory"),
+                iconColor: accent
+            )
+
+            Spacer(minLength: 0)
+
             if let msg = message {
                 Text(msg)
                     .font(.system(size: FS(16), weight: .semibold, design: .default))
-                    .foregroundColor(messages.currentType.color)
+                    .foregroundColor(accent)
                     .opacity(messages.opacity)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
             } else {
                 Text(L10n.t("no.advisory"))
-                    .font(.system(size: FS(24), weight: .semibold, design: .default))
-                    .foregroundColor(ATSColor.orange.opacity(0.6))
+                    .font(.system(size: FS(15), weight: .semibold, design: .default))
+                    .foregroundColor(Theme.textDisabled)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
-            Spacer()
+
+            Spacer(minLength: 0)
+
             Text(L10n.t("advisory.footer"))
-                .font(.system(size: FS(9), weight: .regular, design: .default))
-                .tracking(1.2)
-                .foregroundColor(.white.opacity(0.3))
+                .font(.system(size: FS(10), weight: .regular, design: .default))
+                .tracking(1.0)
+                .foregroundColor(Theme.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(10)
-        .background(messages.currentMessage == nil ? Color.white.opacity(0.04) : messages.currentType.color.opacity(0.08))
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(message == nil ? Theme.surface : accent.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(accent.opacity(message == nil ? 0 : 0.18), lineWidth: 1)
+                )
+        )
     }
 }
 
@@ -1051,8 +1258,19 @@ struct HeaderView: View {
         let brand = snap.truckBrand?.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = snap.truckName?.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let brand, let name else {
-            return (name ?? brand ?? L10n.t("no.truck")).uppercased()
+        guard let brand, !brand.isEmpty else {
+            return (name ?? L10n.t("no.truck")).uppercased()
+        }
+        guard let name, !name.isEmpty else {
+            return brand.uppercased()
+        }
+
+        // Si ya se muestra el logo de la marca, el texto no repite la marca.
+        if BrandLogoLoader.image(brand: brand) != nil {
+            let stripped = name
+                .replacingOccurrences(of: brand, with: "", options: .caseInsensitive)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return (stripped.isEmpty ? name : stripped).uppercased()
         }
 
         if name.localizedCaseInsensitiveContains(brand) {
@@ -1065,6 +1283,21 @@ struct HeaderView: View {
         guard snap.active else { return nil }
         return engineDisplacement(for: snap.truckId)
             ?? engineDisplacement(for: snap.truckName)
+    }
+
+    private var gameClock: String {
+        guard snap.active, let t = snap.gameTime else { return "--:--" }
+        let minutes = Int(t)
+        return String(format: "%02d:%02d", (minutes / 60) % 24, minutes % 60)
+    }
+
+    private var weatherSymbol: String {
+        switch snap.weather {
+        case .clear: return "sun.max.fill"
+        case .cloudy: return "cloud.fill"
+        case .rain: return "cloud.rain.fill"
+        case .storm: return "cloud.bolt.rain.fill"
+        }
     }
 
     var body: some View {
@@ -1084,62 +1317,42 @@ struct HeaderView: View {
                     Text(L10n.t("header.telemetry"))
                         .font(.system(size: FS(15), weight: .semibold, design: .default))
                         .tracking(4)
-                        .foregroundColor(.white.opacity(0.30))
+                        .foregroundColor(.white.opacity(0.45))
                 }
 
                 Spacer()
 
-                if layout != .full {
-                    HStack(spacing: 4) {
-                        Image(systemName: snap.weather == .clear ? "sun.max.fill" : (snap.weather == .rain ? "cloud.rain.fill" : "cloud.fill"))
+                // Reloj solo en Minimal (en Full/Compact ya está el panel de Clima).
+                if layout == .minimal {
+                    HStack(spacing: 5) {
+                        Image(systemName: weatherSymbol)
                             .font(.system(size: FS(12)))
                             .foregroundColor(ATSColor.cyan)
-                        Text(snap.active ? String(format: "%02d:%02d", (snap.gameTime ?? 0) / 60 % 24, (snap.gameTime ?? 0) % 60) : "--:--")
+                        Text(gameClock)
                             .font(.system(size: FS(11), weight: .semibold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.6))
+                            .foregroundColor(Theme.textSecondary)
                     }
-                    .padding(.trailing, 8)
+                    .padding(.trailing, 4)
                 }
 
-                HStack(spacing: 12) {
-                    Text(status.text)
-                        .font(.system(size: FS(14), weight: .semibold, design: .default))
-                        .tracking(3)
-                        .foregroundColor(.white.opacity(0.62))
+                Text(status.text)
+                    .font(.system(size: FS(11), weight: .semibold, design: .monospaced))
+                    .tracking(1.6)
+                    .foregroundColor(status.color)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(status.color.opacity(0.10)))
+                    .overlay(Capsule().stroke(status.color.opacity(0.26), lineWidth: 1))
 
-                    Text(snap.active ? "EN LÍNEA" : "SIN SEÑAL")
-                        .font(.system(size: FS(14), weight: .medium, design: .default))
-                        .tracking(2)
-                        .foregroundColor(.white.opacity(0.24))
-
-                    // Botones visibles solo en modo Full
-                    if layout == .full {
+                if layout == .full {
                     HStack(spacing: 6) {
-                        Button(action: { (NSApp.delegate as? AppDelegate)?.openSettings() }) {
-                            Text("AJUSTES")
-                                .font(.system(size: FS(10), weight: .bold, design: .default))
-                                .tracking(1.5)
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)))
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        HeaderIconButton(symbol: "gearshape.fill", help: "Ajustes") {
+                            (NSApp.delegate as? AppDelegate)?.openSettings()
                         }
-                        .buttonStyle(.plain)
-
-                        Button(action: { (NSApp.delegate as? AppDelegate)?.openCredits() }) {
-                            Text("CRÉDITOS")
-                                .font(.system(size: FS(10), weight: .bold, design: .default))
-                                .tracking(1.5)
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)))
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        HeaderIconButton(symbol: "info.circle", help: "Créditos") {
+                            (NSApp.delegate as? AppDelegate)?.openCredits()
                         }
-                        .buttonStyle(.plain)
                     }
-                    }  // end if layout == .full
                 }
             }
 
@@ -1164,7 +1377,7 @@ struct HeaderView: View {
                         Text(displacement)
                             .font(.system(size: FS(10.5), weight: .regular, design: .default))
                             .tracking(1.4)
-                            .foregroundColor(.white.opacity(0.40))
+                            .foregroundColor(.white.opacity(0.50))
                     }
                 }
             }
@@ -1200,43 +1413,18 @@ private func engineDisplacement(for value: String?) -> String? {
 struct FooterView: View {
     let snap: Snap
 
+    private var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.7.0"
+    }
+
     var body: some View {
         HStack {
-            Text("v3.0 · \(snap.active ? (snap.truckBrand ?? "ATS") : "—")")
-                .font(.system(size: FS(12), weight: .medium, design: .monospaced))
+            Text("v\(version) · macOS")
+                .font(.system(size: FS(10), weight: .medium, design: .monospaced))
                 .tracking(1)
-                .foregroundColor(.white.opacity(0.22))
+                .foregroundColor(Theme.textDisabled)
 
             Spacer()
-
-            Text(snap.active ? "EN LÍNEA · \(Date().formatted(date: .omitted, time: .shortened))" : "SIN SEÑAL")
-                .font(.system(size: FS(11), weight: .semibold, design: .monospaced))
-                .foregroundColor(snap.active ? ATSColor.green.opacity(0.7) : ATSColor.orange.opacity(0.6))
-
-            Spacer()
-
-            Text(snap.demo ? "DATOS DE PRUEBA" : (snap.active ? "DATOS EN VIVO" : L10n.t("no.signal")))
-                .font(.system(size: FS(11), weight: .semibold, design: .monospaced))
-                .tracking(2)
-                .foregroundColor(
-                    snap.demo
-                        ? ATSColor.cyan.opacity(0.75)
-                        : (snap.active ? ATSColor.green.opacity(0.75) : ATSColor.orange.opacity(0.65))
-                )
-
-            Spacer()
-
-            Button(action: { NSApp.terminate(nil) }) {
-                Text("SALIR")
-                    .font(.system(size: FS(11), weight: .bold, design: .monospaced))
-                    .tracking(2)
-                    .foregroundColor(.white.opacity(0.6))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.white.opacity(0.06)))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.12), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
         }
         .frame(height: 30)
     }
@@ -1269,24 +1457,16 @@ struct IndicatorRowView: View {
         return Date().timeIntervalSince(start) < 1.25
     }
 
-    private var airBrakeWarning: Bool {
-        guard snap.active, let pressure = snap.airPressure else { return false }
-        let air = Double(pressure)
-        if let emergency = snap.airEmergency, air <= Double(emergency) { return true }
-        if let warn = snap.airWarn, air <= Double(warn) { return true }
-        return false
+    private var batteryWarning: Bool {
+        snap.active && snap.engine && (snap.batteryVoltage ?? 27) < (snap.batteryWarn ?? 23.76)
     }
 
-    private var airBrakeColor: Color {
-        guard let pressure = snap.airPressure else { return ATSColor.red }
-        if let emergency = snap.airEmergency, Double(pressure) <= Double(emergency) {
-            return ATSColor.red
-        }
-        return ATSColor.orange
+    private var oilWarning: Bool {
+        snap.active && snap.engine && (snap.oilPressure ?? 60) < (snap.oilWarn ?? 14)
     }
 
     var body: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 16) {
             indicator("beacon-c", "light.max", (snap.active && snap.engine && snap.beacon) || allLampsOn, ATSColor.yellow, pulses: true)
             indicator("side-markers-c", "parkingsign", (snap.active && snap.engine && snap.parking) || allLampsOn, ATSColor.green)
             indicator("low-beam-c", "lightbulb.fill", (snap.active && snap.engine && snap.lowB) || allLampsOn, ATSColor.green)
@@ -1303,6 +1483,8 @@ struct IndicatorRowView: View {
             indicator("parking-brake-2-c", "hand.raised.fill", (snap.active && snap.engine && snap.park) || allLampsOn, ATSColor.red, pulses: true)
             indicator("retarder-c", "gauge.medium", (snap.active && snap.engine && snap.retarder) || allLampsOn, ATSColor.green)
             indicator("engine-brake-round", "engine.combustion", (snap.active && snap.engine && snap.motor) || allLampsOn, ATSColor.green)
+            indicator("battery-c", "battery.25", batteryWarning || allLampsOn, ATSColor.red)
+            indicator("oil-c", "drop.fill", oilWarning || allLampsOn, ATSColor.red)
             indicator("wiper-c", "drop.fill", (snap.active && snap.engine && (snap.wipers > 0)) || allLampsOn, ATSColor.cyan, pulses: true)
             indicator("diff-lock-c", "gearshape.2.fill", (snap.active && snap.engine && snap.diffLock) || allLampsOn, ATSColor.orange, pulses: true)
         }
@@ -1310,10 +1492,10 @@ struct IndicatorRowView: View {
         .padding(.vertical, 0)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.016))
+                .fill(Theme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.047), lineWidth: 1)
+                        .stroke(Theme.stroke, lineWidth: 1)
                 )
         )
         .frame(maxWidth: .infinity)
@@ -1350,26 +1532,27 @@ struct IndicatorIconView: View {
     var pulses = false
 
     private var foreground: Color {
-        active ? activeColor : Color.white.opacity(0.20)
+        active ? activeColor : Color.white
     }
 
     var body: some View {
         Group {
             if let icon = IndicatorIcon.image(named: iconName) {
                 Image(nsImage: icon)
-                    .renderingMode(.original)
+                    .renderingMode(.template)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
                     .frame(width: 40, height: 40)
+                    .foregroundColor(foreground)
             } else {
                 Image(systemName: fallbackIcon)
                     .font(.system(size: FS(22), weight: .bold))
-                    .foregroundColor(active ? activeColor : Color.white.opacity(0.40))
+                    .foregroundColor(active ? activeColor : Color.white)
                     .frame(width: 40, height: 40)
             }
         }
-        .shadow(color: active ? activeColor.opacity(0.35) : .clear, radius: 6)
+        .shadow(color: active ? activeColor.opacity(0.25) : .clear, radius: 4)
         .modifier(IndicatorPulse(active: active, pulses: pulses))
         .frame(height: 46)
     }
@@ -1394,7 +1577,7 @@ private struct IndicatorPulse: ViewModifier {
             content
                 .opacity(active
                     ? (pulses ? 0.60 + 0.40 * phase : 1.0)
-                    : 0.20)
+                    : 0.30)
         }
     }
 }
@@ -1415,7 +1598,7 @@ struct CheckEngineCell: View {
                             .interpolation(.high)
                             .scaledToFit()
                             .frame(width: 26, height: 26)
-                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.25))
+                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.70))
                     } else {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: FS(20), weight: .bold))
@@ -1425,123 +1608,20 @@ struct CheckEngineCell: View {
 
                     VStack(alignment: .leading, spacing: -2) {
                         Text("CHECK")
-                            .font(.system(size: FS(9), weight: .bold, design: .default))
-                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.35))
+                            .font(.system(size: FS(10), weight: .bold, design: .default))
+                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.70))
                         Text(L10n.t("checkengine.engine"))
-                            .font(.system(size: FS(9), weight: .bold, design: .default))
-                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.35))
+                            .font(.system(size: FS(10), weight: .bold, design: .default))
+                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.70))
                     }
                 }
             }
         }
-        .frame(width: 88, height: 32)
+        .frame(width: 88, height: 40)
         .modifier(IndicatorPulse(active: active && engineOn, pulses: active))
     }
 }
 
-// MARK: - Trip
-struct TripBadgeView: View {
-    let snap: Snap
-
-    private struct Trip {
-        let travelled: Int
-        let planned: Int
-        let remaining: Int
-        let eta: String?
-    }
-
-    private static let kmFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.maximumFractionDigits = 0
-        formatter.locale = Locale(identifier: "es_ES")
-        return formatter
-    }()
-
-    private var trip: Trip? {
-        guard snap.active, snap.onJob,
-              let plannedValue = snap.planned, plannedValue > 0,
-              let routeDistance = snap.routeD
-        else {
-            return nil
-        }
-
-        let planned = Int(plannedValue)
-        let remaining = max(0, Int((Double(routeDistance) / 1_000.0).rounded()))
-        let travelled = max(0, planned - remaining)
-        return Trip(
-            travelled: travelled,
-            planned: planned,
-            remaining: remaining,
-            eta: etaText
-        )
-    }
-
-    private var etaText: String? {
-        guard let time = snap.routeT, time > 0, time < 172_800 else { return nil }
-        let minutes = max(0, Int((Double(time) / 60.0).rounded()))
-        let hours = minutes / 60
-        let rest = minutes % 60
-        return hours > 0 ? "\(hours)h \(rest)m" : "\(rest) min"
-    }
-
-    private func km(_ value: Int) -> String {
-        TripBadgeView.kmFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let trip {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(km(trip.travelled))
-                        .font(.system(size: FS(28), weight: .bold, design: .default))
-                        .monospacedDigit()
-                        .foregroundColor(ATSColor.green)
-                        .lineLimit(1)
-
-                    Text("/ \(km(trip.planned)) km")
-                        .font(.system(size: FS(11.5), weight: .medium, design: .default))
-                        .monospacedDigit()
-                        .foregroundColor(.white.opacity(0.34))
-                        .lineLimit(1)
-                }
-
-                Text(
-                    trip.eta.map { "FALTAN \(km(trip.remaining)) km · \($0)" }
-                        ?? "FALTAN \(km(trip.remaining)) km"
-                )
-                .font(.system(size: FS(11.5), weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.56))
-                .lineLimit(1)
-                .minimumScaleFactor(0.80)
-            } else {
-                Text(L10n.t("no.trip"))
-                    .font(.system(size: FS(13), weight: .semibold, design: .default))
-                    .tracking(1.5)
-                    .foregroundColor(.white.opacity(0.34))
-
-                Text(snap.active ? L10n.t("no.routeactive") : L10n.t("no.signal"))
-                    .font(.system(size: FS(10.5), weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.42))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.80)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .frame(width: 220, height: 92, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(0.020))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(ATSColor.cyan.opacity(0.16), lineWidth: 1)
-                )
-        )
-    }
-}
-
-// MARK: - Damage
 struct DamagePanelView: View {
     let snap: Snap
 
@@ -1581,86 +1661,61 @@ struct DamagePanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 12) {
-                if let icon = IndicatorIcon.image(named: "advisor-diagnostics") {
-                    Image(nsImage: icon)
-                        .renderingMode(.template)
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        .frame(width: 21, height: 21)
-                        .foregroundColor(headerColor)
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            PanelHeader(
+                icon: "wrench.and.screwdriver.fill",
+                title: L10n.t("panel.damage"),
+                status: statusText,
+                statusColor: headerColor
+            )
 
-                Text(L10n.t("panel.damage"))
-                    .font(.system(size: FS(16), weight: .bold, design: .default))
-                    .tracking(3.5)
-                    .foregroundColor(.white.opacity(0.62))
-
-                Spacer(minLength: 0)
-
-                Text(statusText)
-                    .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                    .tracking(2)
-                    .foregroundColor(headerColor.opacity(0.85))
-            }
-
-            VStack(spacing: 12) {
-                DamageRowView(label: "CAMIÓN", value: truck)
-                DamageRowView(label: "TRÁILER", value: trailer)
-                DamageRowView(label: "CARGA", value: cargo)
-            }
-
-            if snap.active {
-                let key = TruckImageLoader.name(for: snap)
-                ZStack(alignment: .bottom) {
-                    if let img = TruckImageLoader.image(named: key) {
-                        Image(nsImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .transition(.opacity)
-                            .id(key ?? "")
-                            .overlay(
-                                LinearGradient(colors: [.clear, .black.opacity(0.45)],
-                                               startPoint: .top, endPoint: .bottom)
-                            )
-                    } else {
-                        EmptyStateView(message: L10n.t("no.image"), hint: nil)
-                    }
-                    if snap.active, let name = snap.truckName, !name.isEmpty {
-                        Text(name.uppercased())
-                            .font(.system(size: FS(9), weight: .bold, design: .default))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.black.opacity(0.45))
-                            .padding(.bottom, 4)
-                    }
-                }
-                .frame(width: 360, height: 180)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .animation(.easeInOut(duration: 0.5), value: key)
+            VStack(spacing: 10) {
+                DamageRowView(label: L10n.t("damage.truck"), value: truck)
+                DamageRowView(label: L10n.t("damage.trailer"), value: trailer)
+                DamageRowView(label: L10n.t("damage.cargo"), value: cargo)
             }
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 6) {
-                Text(L10n.t("damage.damage"))
-                    .font(.system(size: FS(9), weight: .bold, design: .default))
-                    .tracking(2)
-                    .foregroundColor(.white.opacity(0.28))
+            if snap.active {
+                let key = TruckImageLoader.name(for: snap)
+                ZStack(alignment: .bottomLeading) {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Theme.surfaceRaised)
 
-                Text("5% · 20% · 50%")
-                    .font(.system(size: FS(9), weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.22))
+                    if let img = TruckImageLoader.image(named: key) {
+                        Image(nsImage: img)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .transition(.opacity)
+                            .id(key ?? "")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                    } else {
+                        VStack(spacing: 6) {
+                            Image(systemName: "truck.box.fill")
+                                .font(.system(size: FS(34), weight: .regular))
+                                .foregroundColor(.white.opacity(0.16))
+                            Text(L10n.t("no.image"))
+                                .font(.system(size: FS(10), weight: .semibold, design: .default))
+                                .tracking(1.4)
+                                .foregroundColor(Theme.textDisabled)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 150)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .animation(.easeInOut(duration: 0.5), value: key)
             }
         }
-        .padding(24)
+        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.white.opacity(0.022))
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Theme.surface)
         )
     }
 }
@@ -1696,26 +1751,27 @@ struct DamageRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(label)
-                    .font(.system(size: FS(12.5), weight: .bold, design: .default))
-                    .tracking(2)
-                    .foregroundColor(.white.opacity(0.45))
+                    .font(.system(size: FS(11), weight: .bold, design: .default))
+                    .tracking(1.6)
+                    .foregroundColor(Theme.textTertiary)
 
                 Spacer(minLength: 0)
 
-                Text(text)
-                    .font(.system(size: FS(22), weight: .bold, design: .default))
-                    .monospacedDigit()
-                    .foregroundColor(color)
-
                 if let value, value >= 5 {
                     Text(severityText)
-                        .font(.system(size: FS(9), weight: .bold, design: .default))
-                        .tracking(1)
-                        .foregroundColor(color.opacity(0.8))
+                        .font(.system(size: FS(10), weight: .bold, design: .default))
+                        .tracking(0.8)
+                        .foregroundColor(color.opacity(0.85))
                 }
+
+                Text(text)
+                    .font(.system(size: FS(19), weight: .bold, design: .default))
+                    .monospacedDigit()
+                    .foregroundColor(color)
+                    .frame(minWidth: 46, alignment: .trailing)
             }
 
             GeometryReader { geo in
@@ -1728,7 +1784,7 @@ struct DamageRowView: View {
                         .frame(width: geo.size.width * fraction)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 5)
         }
     }
 }
@@ -1736,13 +1792,11 @@ struct DamageRowView: View {
 // MARK: - Speed arc (FH6 224°)
 struct SpeedArcView: View {
     let value: Double          // km/h
-    let maxValue: Double       // 160
+    let maxValue: Double
     let accent: Color
     let valueText: String
     let unitText: String
     let subtitle: String
-    let odometerText: String
-    let odometerColor: Color
     let markerValue: Double?   // limit km/h
     let markerColor: Color
 
@@ -1792,7 +1846,7 @@ struct SpeedArcView: View {
                     let rad = deg * .pi / 180
                     let labelRadius = radius + 30
                     Text("\(Int(kmh))")
-                        .font(.system(size: FS(9), weight: .semibold, design: .monospaced))
+                        .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
                         .foregroundColor(.white.opacity(0.55))
                         .position(x: center.x + cos(rad) * labelRadius,
                                   y: center.y + sin(rad) * labelRadius)
@@ -1812,35 +1866,30 @@ struct SpeedArcView: View {
                     .stroke(markerColor, lineWidth: 3)
                 }
 
-                // Center number
-                VStack(spacing: 2) {
+                // Center number + unit + limit chip
+                VStack(spacing: 4) {
                     Text(valueText)
                         .font(.system(size: FS(184), weight: .light, design: .default))
                         .monospacedDigit()
                         .foregroundColor(accent)
+
                     Text(unitText)
                         .font(.system(size: FS(14), weight: .medium, design: .default))
                         .foregroundColor(.white.opacity(0.55))
-                    Text(subtitle)
-                        .font(.system(size: FS(11), weight: .semibold, design: .default))
-                        .foregroundColor(.white.opacity(0.40))
-                }
-                .offset(y: -20)
 
-                // Odometer pill
-                Text(odometerText + " km")
-                    .font(.system(size: FS(13), weight: .semibold, design: .monospaced))
-                    .foregroundColor(odometerColor)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(Color.white.opacity(0.06)))
-                    .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
-                    .offset(y: 188)
+                    Text(subtitle)
+                        .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
+                        .tracking(1.0)
+                        .foregroundColor(.white.opacity(0.58))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(Theme.surfaceRaised))
+                        .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
+                }
+                .offset(y: -30)
             }
         }
     }
-
-    private var snapActiveColor: Color { accent }
 }
 
 private struct ArcShape: Shape {
@@ -1881,6 +1930,7 @@ struct WarningLampView: View {
 // MARK: - RPM bar (FH6)
 struct RpmBarView: View {
     let snap: Snap
+    var width: CGFloat = 330
     @State private var ignitionStart: Date? = nil
     @State private var prevEngine: Bool = false
     @State private var smoothedRpm: Double = 0
@@ -1911,23 +1961,23 @@ struct RpmBarView: View {
     var body: some View {
         VStack(spacing: 2) {
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 7)
-                    .fill(Color.white.opacity(0.06))
-                    .frame(width: 330, height: 14)
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Theme.surfaceRaised)
+                    .frame(width: width, height: 12)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(LinearGradient(colors: [ATSColor.green, ATSColor.yellow, ATSColor.red],
                                          startPoint: .leading, endPoint: .trailing))
-                    .frame(width: 330 * fraction, height: 14)
+                    .frame(width: width * fraction, height: 12)
                 // redline mark at 92%
                 Rectangle()
                     .fill(Color.white.opacity(0.8))
-                    .frame(width: 2, height: 18)
-                    .offset(x: 330 * 0.92 - 1)
+                    .frame(width: 2, height: 16)
+                    .offset(x: width * 0.92 - 1)
             }
-            .frame(width: 330, height: 14)
+            .frame(width: width, height: 12)
             Text(snap.active ? "\(Int(rpm.rounded())) RPM" : "-- RPM")
                 .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(.white.opacity(0.55))
         }
         .onChange(of: snap.engine) { _, newValue in
             if newValue && !prevEngine { ignitionStart = Date() }
@@ -1954,7 +2004,6 @@ struct RpmBarView: View {
     }
 }
 
-
 // MARK: - Gear box (FH6)
 struct GearBoxView: View {
     let snap: Snap
@@ -1973,12 +2022,12 @@ struct GearBoxView: View {
     var body: some View {
         VStack(spacing: 0) {
             Text(gearText)
-                .font(.system(size: FS(42), weight: .bold, design: .default))
+                .font(.system(size: FS(38), weight: .bold, design: .default))
                 .foregroundColor(gearColor)
         }
-        .frame(width: 70, height: 64)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .frame(width: 62, height: 62)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.surfaceRaised))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.stroke, lineWidth: 1))
     }
 }
 
@@ -2044,17 +2093,6 @@ struct SpeedometerView: View {
         return Double(set) * 3.6
     }
 
-    private var odometerText: String {
-        guard snap.active, let odometer = snap.odometer, odometer >= 0 else {
-            return "--"
-        }
-        return String(Int(odometer.rounded()))
-    }
-
-    private var odometerColor: Color {
-        snap.active ? ATSColor.cyan : Color.white.opacity(0.25)
-    }
-
     private var displaySpeed: Double {
         if snap.active && snap.engine && ignitionStart != nil {
             let elapsed = Date().timeIntervalSince(ignitionStart!)
@@ -2072,8 +2110,6 @@ struct SpeedometerView: View {
                 valueText: valueText,
                 unitText: "km/h",
                 subtitle: subtitle,
-                odometerText: odometerText,
-                odometerColor: odometerColor,
                 markerValue: limitKmh,
                 markerColor: ATSColor.red
             )
@@ -2081,22 +2117,7 @@ struct SpeedometerView: View {
             GaugeBadge(active: cruiseSetKmh != nil, accent: ATSColor.green) {
                 CruiseBadgeContent(speedKmh: cruiseSetKmh)
             }
-            .offset(y: -160)
-
-            // Testigos de bateria y presion de aceite (FH6)
-            WarningLampView(
-                symbol: "battery.25",
-                active: snap.active && snap.engine && (snap.batteryVoltage ?? 27) < (snap.batteryWarn ?? 23.76),
-                color: ATSColor.red
-            )
-            .offset(x: -97.5, y: 34)
-
-            WarningLampView(
-                symbol: "drop.fill",
-                active: snap.active && snap.engine && (snap.oilPressure ?? 60) < (snap.oilWarn ?? 14),
-                color: ATSColor.red
-            )
-            .offset(x: 65.5, y: 34)
+            .offset(y: -195)
         }
         .onChange(of: snap.engine) { _, newValue in
             if newValue && !prevEngine { ignitionStart = Date() }
@@ -2266,7 +2287,7 @@ private struct GaugeBadge<Content: View>: View {
 
             content
         }
-        .frame(width: 118, height: 58)
+        .frame(width: 132, height: 62)
     }
 }
 
@@ -2293,11 +2314,11 @@ private struct CruiseBadgeContent: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(L10n.t("cruise.label"))
-                    .font(.system(size: FS(6.5), weight: .bold, design: .default))
-                    .tracking(1.2)
+                    .font(.system(size: FS(9), weight: .bold, design: .default))
+                    .tracking(1.0)
                     .foregroundColor(active ? .white.opacity(0.48) : .white.opacity(0.30))
 
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
                     if let speedKmh {
                         Text("\(Int(speedKmh.rounded()))")
                             .font(.system(size: FS(18), weight: .bold, design: .default))
@@ -2311,7 +2332,7 @@ private struct CruiseBadgeContent: View {
                     }
 
                     Text("km/h")
-                        .font(.system(size: FS(7), weight: .medium, design: .default))
+                        .font(.system(size: FS(9), weight: .medium, design: .default))
                         .foregroundColor(.white.opacity(0.40))
                 }
             }
@@ -2838,23 +2859,26 @@ struct CompactFuelPanelView: View {
         return "\(Int((fraction * 100).rounded()))%"
     }
 
-    private var gallonsText: String {
-        guard let fuel else { return "-- gal" }
-        return "\(Int((fuel * litersToGallons).rounded())) gal"
+    private var fuelUnit: Int {
+        UserDefaults.standard.integer(forKey: "ATS.fuelUnit")
     }
 
-    private var capacityText: String {
-        guard let capacity else { return "" }
-        return "de \(Int((capacity * litersToGallons).rounded())) gal"
+    // Mantener volumen y consumo en el mismo sistema: L + L/100 o gal + MPG/gal/100mi.
+    private var usesGallons: Bool { fuelUnit != 0 }
+
+    private var volumeText: String {
+        guard let fuel, let capacity else { return "--" }
+        if usesGallons {
+            let f = Int((fuel * litersToGallons).rounded())
+            let c = Int((capacity * litersToGallons).rounded())
+            return "\(f) / \(c) gal"
+        }
+        return "\(Int(fuel.rounded())) / \(Int(capacity.rounded())) L"
     }
 
     private var rangeText: String {
         guard let range else { return "-- km" }
         return "\(Int(range.rounded())) km"
-    }
-
-    private var fuelUnit: Int {
-        UserDefaults.standard.integer(forKey: "ATS.fuelUnit")
     }
 
     private var consText: String {
@@ -2873,81 +2897,59 @@ struct CompactFuelPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 6) {
-                Image(systemName: "fuelpump.fill")
-                    .font(.system(size: FS(13), weight: .semibold))
-                    .foregroundColor(color)
+        VStack(alignment: .leading, spacing: 5) {
+            PanelHeader(
+                icon: "fuelpump.fill",
+                title: L10n.t("panel.fuel"),
+                status: lowFuel && snap.active ? L10n.t("fuel.reserve") : nil,
+                statusColor: ATSColor.red,
+                iconColor: color
+            )
 
-                Text(L10n.t("panel.fuel"))
-                    .font(.system(size: FS(9.5), weight: .bold, design: .default))
-                    .tracking(1.6)
-                    .foregroundColor(.white.opacity(0.62))
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-
-            HStack(alignment: .center, spacing: 17) {
+            HStack(alignment: .center, spacing: 12) {
                 FuelBarView(fraction: animatedFraction, color: color)
-                    .frame(width: 24, height: 114)
+                    .frame(width: 20, height: 92)
 
-                VStack(alignment: .center, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(percentText)
-                        .font(.system(size: FS(27), weight: .bold, design: .default))
+                        .font(.system(size: FS(28), weight: .bold, design: .default))
                         .monospacedDigit()
                         .foregroundColor(color)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
 
-                    Text(gallonsText)
-                        .font(.system(size: FS(14), weight: .semibold, design: .default))
+                    Text(volumeText)
+                        .font(.system(size: FS(12), weight: .semibold, design: .default))
                         .monospacedDigit()
-                        .foregroundColor(.white)
+                        .foregroundColor(Theme.textSecondary)
                         .lineLimit(1)
 
-                    Text(capacityText)
-                        .font(.system(size: FS(8.5), weight: .medium, design: .default))
-                        .monospacedDigit()
-                        .foregroundColor(.white.opacity(0.32))
+                    Spacer(minLength: 2)
 
-                    Spacer(minLength: 6)
-
-                    Text(L10n.t("fuel.autonomy"))
-                        .font(.system(size: FS(6.8), weight: .bold, design: .default))
-                        .tracking(1.4)
-                        .foregroundColor(.white.opacity(0.38))
-
-                    Text(rangeText)
-                        .font(.system(size: FS(13), weight: .semibold, design: .default))
-                        .monospacedDigit()
-                        .foregroundColor(.white.opacity(0.90))
-                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        Text(L10n.t("fuel.autonomy"))
+                            .font(.system(size: FS(10), weight: .bold, design: .default))
+                            .tracking(0.8)
+                            .foregroundColor(Theme.textTertiary)
+                        Text(rangeText)
+                            .font(.system(size: FS(14), weight: .semibold, design: .monospaced))
+                            .foregroundColor(Theme.textPrimary)
+                            .lineLimit(1)
+                    }
 
                     Text("CONS. \(consText)")
-                        .font(.system(size: FS(9), weight: .semibold, design: .default))
-                        .monospacedDigit()
-                        .foregroundColor(.white.opacity(0.55))
+                        .font(.system(size: FS(10.5), weight: .semibold, design: .monospaced))
+                        .foregroundColor(Theme.textSecondary)
                         .lineLimit(1)
-
-                    if lowFuel && snap.active {
-                        Text(L10n.t("fuel.reserve"))
-                            .font(.system(size: FS(6), weight: .bold, design: .default))
-                            .tracking(1.2)
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(Capsule().fill(ATSColor.red))
-                            .padding(.top, 1)
-                    }
                 }
-                .frame(height: 114, alignment: .top)
+                .frame(height: 92, alignment: .topLeading)
             }
-            .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.white.opacity(0.022))
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Theme.surface)
         )
         .onChange(of: snap.engine) { _, newValue in
             if newValue && !prevEngine { ignitionStart = Date() }
@@ -3018,6 +3020,21 @@ struct FinancialPanelView: View {
         return values.reduce(Int64(0)) { $0 + max(0, $1) }
     }
 
+    private var net: Int64? {
+        guard let income else { return nil }
+        return income - (expenses ?? 0)
+    }
+
+    private var netColor: Color {
+        guard let net else { return Theme.textDisabled }
+        return net >= 0 ? ATSColor.green : ATSColor.red
+    }
+
+    private var margin: Int? {
+        guard let income, income > 0, let net else { return nil }
+        return Int((Double(net) / Double(income) * 100).rounded())
+    }
+
     private func money(_ value: Int64?) -> String {
         guard let value else { return "--" }
 
@@ -3027,115 +3044,92 @@ struct FinancialPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "building.2.fill")
-                    .font(.system(size: FS(13), weight: .semibold))
-                    .foregroundColor(ATSColor.cyan)
-
-                Text(L10n.t("panel.finance"))
-                    .font(.system(size: FS(9.5), weight: .bold, design: .default))
-                    .tracking(1.6)
-                    .foregroundColor(.white.opacity(0.62))
-
-                Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                PanelHeader(icon: "building.2.fill", title: L10n.t("panel.finance"))
 
                 if let logoName = snap.companyLogo,
                    let logo = companyLogoImage(named: logoName) {
-                    Image(nsImage: logo)
-                        .resizable()
-                        .interpolation(.high)
-                        .scaledToFit()
-                        .frame(width: 62, height: 62)
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Theme.surfaceRaised)
+                        Image(nsImage: logo)
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .padding(5)
+                    }
+                    .frame(width: 42, height: 42)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.stroke, lineWidth: 1)
+                    )
                 }
             }
 
             Text(snap.companyName ?? L10n.t("no.company"))
-                .font(.system(size: FS(13), weight: .bold, design: .default))
-                .foregroundColor(.white)
+                .font(.system(size: FS(15), weight: .bold, design: .default))
+                .foregroundColor(Theme.textPrimary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
-            Divider().overlay(Color.white.opacity(0.07))
+            Divider().overlay(Theme.stroke)
 
-            // 3 filas primarias (FH6)
-            FinanceRow(label: "TRABAJO ACTUAL",
-                       value: snap.onJob ? (snap.cargoName ?? "--") : L10n.t("no.job"),
-                       color: ATSColor.cyan, large: false)
-            FinanceRow(label: "GANANCIA NETA",
-                       value: money(income.map { $0 - (expenses ?? 0) }),
-                       color: ATSColor.cyan, large: false)
-            FinanceRow(label: "SALDO DEL BANCO",
-                       value: money(snap.bankBalance),
-                       color: ATSColor.cyan, large: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("SALDO DEL BANCO")
+                    .font(.system(size: FS(10), weight: .bold, design: .default))
+                    .tracking(1.4)
+                    .foregroundColor(Theme.textTertiary)
 
-            // Detalle secundario
-            if let drivers = snap.hiredDrivers {
-                FinanceRow(label: "CONDUCTORES", value: "\(drivers)", color: ATSColor.cyan, large: false)
+                Text(money(snap.bankBalance))
+                    .font(.system(size: FS(30), weight: .bold, design: .default))
+                    .monospacedDigit()
+                    .foregroundColor(ATSColor.cyan)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
             }
-            FinanceRow(label: "EGRESOS RUTA", value: money(expenses), color: ATSColor.red, large: false)
 
-            // Margen operativo con barra (FH6)
-            if let inc = income, inc > 0 {
-                let net = Double(inc - (expenses ?? 0))
-                let frac = min(1, max(0, net / Double(inc)))
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(L10n.t("finance.margin"))
-                            .font(.system(size: FS(9), weight: .bold, design: .default))
-                            .tracking(1.2)
-                            .foregroundColor(.white.opacity(0.30))
-                        Spacer()
-                        Text("\(Int((frac * 100).rounded()))%")
-                            .font(.system(size: FS(9), weight: .semibold, design: .monospaced))
-                            .foregroundColor(ATSColor.green.opacity(0.8))
-                    }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.white.opacity(0.06))
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(ATSColor.green)
-                                .frame(width: geo.size.width * frac)
-                        }
-                    }
-                    .frame(height: 6)
-                }
+            HStack(alignment: .top, spacing: 18) {
+                MetricBlock(
+                    label: "GANANCIA NETA",
+                    value: money(net),
+                    color: netColor,
+                    valueSize: 20
+                )
+
+                Spacer(minLength: 12)
+
+                MetricBlock(
+                    label: "EGRESOS RUTA",
+                    value: money(expenses),
+                    color: ATSColor.red,
+                    valueSize: 20,
+                    trailing: true
+                )
             }
 
             Spacer(minLength: 0)
+
+            HStack(spacing: 8) {
+                if let drivers = snap.hiredDrivers {
+                    SmallChip(icon: "person.2.fill", text: "\(drivers) CONDUCTORES", color: Theme.textSecondary)
+                }
+                if let margin {
+                    SmallChip(
+                        icon: "percent",
+                        text: "MARGEN \(margin)%",
+                        color: margin >= 0 ? ATSColor.green : ATSColor.red
+                    )
+                }
+                Spacer(minLength: 0)
+            }
         }
-        .padding(13)
+        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.white.opacity(0.022))
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Theme.surface)
         )
-    }
-}
-
-private struct FinanceRow: View {
-    let label: String
-    let value: String
-    let color: Color
-    let large: Bool
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Text(label)
-                .font(.system(size: FS(7.2), weight: .bold, design: .default))
-                .tracking(1.15)
-                .foregroundColor(.white.opacity(0.38))
-                .lineLimit(1)
-
-            Spacer(minLength: 2)
-
-            Text(value)
-                .font(.system(size: FS(large ? 24 : 20), weight: .bold, design: .default))
-                .monospacedDigit()
-                .foregroundColor(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
-        }
     }
 }
 
@@ -3166,9 +3160,9 @@ struct WeatherPanelView: View {
     private var conditionText: String {
         guard snap.active else { return L10n.t("no.signal") }
         switch condition {
-        case .clear: return "DESPEJADO"
+        case .clear: return L10n.t("weather.clear")
         case .cloudy: return "NUBLADO"
-        case .rain: return "LLUVIA"
+        case .rain: return L10n.t("weather.rain")
         case .storm: return "TORMENTA"
         }
     }
@@ -3184,55 +3178,49 @@ struct WeatherPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: isDay ? "cloud.sun.fill" : "cloud.moon.fill")
-                    .font(.system(size: FS(13), weight: .semibold))
-                    .foregroundColor(accent)
+        VStack(alignment: .leading, spacing: 8) {
+            PanelHeader(
+                icon: isDay ? "cloud.sun.fill" : "cloud.moon.fill",
+                title: L10n.t("panel.weather"),
+                status: snap.active ? (isDay ? "DÍA" : "NOCHE") : "—",
+                statusColor: Theme.textTertiary,
+                iconColor: accent
+            )
 
-                Text(L10n.t("panel.weather"))
-                    .font(.system(size: FS(9.5), weight: .bold, design: .default))
-                    .tracking(1.6)
-                    .foregroundColor(.white.opacity(0.62))
+            HStack(spacing: 12) {
+                WeatherGlyph(condition: condition, isDay: isDay)
+                    .frame(width: 64, height: 56)
+                    .opacity(snap.active ? 1 : 0.28)
 
-                Spacer()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(timeText)
+                        .font(.system(size: FS(24), weight: .bold, design: .default))
+                        .monospacedDigit()
+                        .foregroundColor(Theme.textPrimary)
+                        .lineLimit(1)
 
-                Text(snap.active ? (isDay ? "DÍA" : "NOCHE") : "—")
-                    .font(.system(size: FS(7.5), weight: .bold, design: .monospaced))
-                    .tracking(1.2)
-                    .foregroundColor(.white.opacity(0.32))
+                    Text(L10n.t("weather.gametime"))
+                        .font(.system(size: FS(10), weight: .bold, design: .default))
+                        .tracking(0.8)
+                        .foregroundColor(Theme.textTertiary)
+
+                    Text(conditionText)
+                        .font(.system(size: FS(11), weight: .bold, design: .default))
+                        .tracking(0.8)
+                        .foregroundColor(accent)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.top, 2)
+                }
+
+                Spacer(minLength: 0)
             }
-
-            WeatherGlyph(condition: condition, isDay: isDay)
-                .frame(width: 84, height: 72)
-                .frame(maxWidth: .infinity)
-                .opacity(snap.active ? 1 : 0.28)
-
-            VStack(spacing: 1) {
-                Text(timeText)
-                    .font(.system(size: FS(28), weight: .bold, design: .default))
-                    .monospacedDigit()
-                    .foregroundColor(.white.opacity(0.92))
-                    .lineLimit(1)
-
-                Text(L10n.t("weather.gametime"))
-                    .font(.system(size: FS(6.5), weight: .bold, design: .default))
-                    .tracking(1.1)
-                    .foregroundColor(.white.opacity(0.28))
-            }
-            .frame(maxWidth: .infinity)
-
-            Text(conditionText)
-                .font(.system(size: FS(9), weight: .bold, design: .default))
-                .tracking(1.5)
-                .foregroundColor(accent)
-                .frame(maxWidth: .infinity)
         }
-        .padding(13)
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color.white.opacity(0.022))
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Theme.surface)
         )
     }
 }
@@ -3264,7 +3252,6 @@ private struct WeatherGlyph: View {
             Image(systemName: "sun.max.fill")
                 .font(.system(size: FS(size), weight: .medium))
                 .foregroundColor(ATSColor.yellow)
-                .shadow(color: ATSColor.yellow.opacity(0.25), radius: size * 0.18)
         } else {
             FullMoonView(size: size)
         }
@@ -3366,21 +3353,9 @@ struct CargoPanelView: View {
         return name
     }
 
-    private var cargoId: String? {
-        guard snap.active, snap.cargoLoaded,
-              let id = snap.cargoId, !id.isEmpty else { return nil }
-        return id
-    }
-
     private var mass: Double? {
         guard snap.active, snap.cargoLoaded,
               let value = snap.cargoMass, value > 0 else { return nil }
-        return Double(value)
-    }
-
-    private var damage: Double? {
-        guard snap.active, snap.cargoLoaded,
-              let value = snap.cargoDmg else { return nil }
         return Double(value)
     }
 
@@ -3388,44 +3363,18 @@ struct CargoPanelView: View {
         snap.active && snap.cargoLoaded
     }
 
-    private var massText: String {
-        guard let mass else { return "-- kg" }
-        let kg = Int(mass.rounded())
-        return "\(Self.massFormatter.string(from: NSNumber(value: kg)) ?? "\(kg)") kg"
+    private var isImperial: Bool {
+        UserDefaults.standard.integer(forKey: "ATS.units") == 1
     }
 
-    private var tonsText: String {
-        guard let mass else { return "" }
+    private var massText: String {
+        guard let mass else { return "--" }
+        if isImperial {
+            let lb = mass * 2.2046226218
+            return "\(Self.massFormatter.string(from: NSNumber(value: Int(lb.rounded()))) ?? "\(Int(lb.rounded()))") lb"
+        }
         let tons = mass / 1_000
         return String(format: "%.1f t", tons).replacingOccurrences(of: ".", with: ",")
-    }
-
-    private var integrityText: String {
-        guard let damage else { return "--" }
-        return "\(Int((100 - damage).rounded()))%"
-    }
-
-    private var integrityFraction: Double {
-        guard let damage else { return 0 }
-        return min(max(1 - damage / 100, 0), 1)
-    }
-
-    private var accent: Color {
-        guard snap.active else { return Color.white.opacity(0.25) }
-        guard loaded else { return Color.white.opacity(0.25) }
-        guard let damage else { return ATSColor.cyan }
-        if damage >= 50 { return ATSColor.red }
-        if damage >= 20 { return ATSColor.orange }
-        if damage >= 5 { return ATSColor.yellow }
-        return ATSColor.green
-    }
-
-    private var damageColor: Color {
-        guard let damage else { return Color.white.opacity(0.30) }
-        if damage >= 50 { return ATSColor.red }
-        if damage >= 20 { return ATSColor.orange }
-        if damage >= 5 { return ATSColor.yellow }
-        return ATSColor.green
     }
 
     private var statusText: String {
@@ -3433,157 +3382,80 @@ struct CargoPanelView: View {
         return loaded ? "CARGADA" : "VACÍA"
     }
 
-    private var typeText: String {
-        guard let cargoId else { return "TIPO · --" }
-        return "TIPO · \(cargoId)"
+    private var statusColor: Color {
+        guard snap.active else { return Theme.textTertiary }
+        return loaded ? ATSColor.green : Theme.textTertiary
+    }
+
+    private var jobText: String {
+        snap.specialJob ? L10n.t("cargo.special") : L10n.t("cargo.standard")
+    }
+
+    private var trailerText: String {
+        loaded ? L10n.t("cargo.ontrailer") : L10n.t("cargo.notrailer")
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(spacing: 10) {
-                Image(systemName: "shippingbox.fill")
-                    .font(.system(size: FS(19), weight: .semibold))
-                    .foregroundColor(accent)
+        VStack(alignment: .leading, spacing: 16) {
+            PanelHeader(
+                icon: "shippingbox.fill",
+                title: L10n.t("panel.cargo"),
+                status: statusText,
+                statusColor: statusColor
+            )
 
-                Text(L10n.t("panel.cargo"))
-                    .font(.system(size: FS(15), weight: .bold, design: .default))
-                    .tracking(3)
-                    .foregroundColor(.white.opacity(0.62))
+            Text(cargoName ?? L10n.t("no.cargo"))
+                .font(.system(size: FS(26), weight: .bold, design: .default))
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
 
-                Spacer()
-
-                Text(statusText)
-                    .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                    .tracking(2)
-                    .foregroundColor(accent.opacity(0.85))
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(cargoName ?? L10n.t("no.cargo"))
-                    .font(.system(size: FS(26), weight: .bold, design: .default))
-                    .foregroundColor(.white.opacity(0.92))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-
-                // TIPO removido (v3.2.0): sin TIPO ni REMOLQUE ni linea divisoria
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.t("cargo.weight"))
                     .font(.system(size: FS(10), weight: .bold, design: .default))
-                    .tracking(2.5)
-                    .foregroundColor(.white.opacity(0.38))
-
-                Spacer()
+                    .tracking(1.4)
+                    .foregroundColor(Theme.textTertiary)
 
                 Text(massText)
-                    .font(.system(size: FS(22), weight: .bold, design: .default))
+                    .font(.system(size: FS(24), weight: .bold, design: .default))
                     .monospacedDigit()
-                    .foregroundColor(.white.opacity(0.92))
+                    .foregroundColor(Theme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-
-                if !tonsText.isEmpty {
-                    Text(tonsText)
-                        .font(.system(size: FS(11), weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.38))
-                }
             }
 
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Text(L10n.t("cargo.integrity"))
-                        .font(.system(size: FS(9), weight: .bold, design: .default))
-                        .tracking(2)
-                        .foregroundColor(.white.opacity(0.34))
+            HStack(alignment: .top, spacing: 18) {
+                MetricBlock(
+                    label: "TRABAJO",
+                    value: jobText,
+                    color: snap.specialJob ? ATSColor.yellow : Theme.textSecondary,
+                    valueSize: 13
+                )
 
-                    Spacer()
+                Spacer(minLength: 12)
 
-                    Text(integrityText)
-                        .font(.system(size: FS(13), weight: .bold, design: .monospaced))
-                        .foregroundColor(damageColor)
-                }
-
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(Color.white.opacity(0.06))
-
-                        Capsule()
-                            .fill(damageColor)
-                            .frame(width: max(0, geo.size.width * integrityFraction))
-                    }
-                }
-                .frame(height: 6)
-            }
-
-            if snap.active, snap.onJob, let src = snap.citySrc, let dst = snap.cityDst {
-                HStack(spacing: 4) {
-                    Text(src.uppercased())
-                        .font(.system(size: FS(9), weight: .semibold, design: .default))
-                        .foregroundColor(.white.opacity(0.5))
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: FS(8), weight: .bold))
-                        .foregroundColor(.white.opacity(0.3))
-                    Text(dst.uppercased())
-                        .font(.system(size: FS(9), weight: .semibold, design: .default))
-                        .foregroundColor(.white.opacity(0.5))
-                    Spacer()
-                    if let rd = snap.routeD, rd > 0 {
-                        Text("\(Int((Double(rd)/1000.0).rounded())) km")
-                            .font(.system(size: FS(9), weight: .semibold, design: .monospaced))
-                            .foregroundColor(ATSColor.cyan.opacity(0.7))
-                    }
-                }
+                MetricBlock(
+                    label: "REMOLQUE",
+                    value: trailerText,
+                    color: loaded ? ATSColor.green : Theme.textTertiary,
+                    valueSize: 13,
+                    trailing: true
+                )
             }
 
             Spacer(minLength: 0)
 
-            HStack {
-                Text(snap.specialJob ? "TRABAJO ESPECIAL" : "TRABAJO ESTÁNDAR")
-                    .font(.system(size: FS(9), weight: .bold, design: .default))
-                    .tracking(1.8)
-                    .foregroundColor(snap.specialJob ? ATSColor.yellow.opacity(0.85) : Color.white.opacity(0.30))
-
-                Spacer()
-
-                Text(loaded ? L10n.t("cargo.ontrailer") : L10n.t("cargo.notrailer"))
-                    .font(.system(size: FS(9), weight: .semibold, design: .default))
-                    .tracking(1.5)
-                    .foregroundColor(.white.opacity(0.30))
-            }
+            Image(systemName: "shippingbox.fill")
+                .font(.system(size: FS(72), weight: .regular))
+                .foregroundColor(.white.opacity(0.035))
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .padding(22)
+        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.white.opacity(0.022))
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Theme.surface)
         )
-    }
-}
-
-
-// MARK: - Speed limit sign (FH6)
-struct SpeedLimitSignView: View {
-    let limitKmh: Double?
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color.white)
-            Circle()
-                .stroke(ATSColor.red, lineWidth: 6)
-            if let v = limitKmh {
-                Text("\(Int(v.rounded()))")
-                    .font(.system(size: FS(22), weight: .bold, design: .default))
-                    .foregroundColor(.black)
-            } else {
-                Text("--")
-                    .font(.system(size: FS(22), weight: .bold, design: .default))
-                    .foregroundColor(.black.opacity(0.4))
-            }
-        }
-        .frame(width: 88, height: 88)
     }
 }
 
@@ -3628,48 +3500,38 @@ struct GPSPanelView: View {
         return city
     }
 
-    private var routeText: String {
-        guard snap.active, snap.onJob, let distance = snap.routeD, distance > 0 else {
-            return "--"
-        }
-
-        let km = Int((Double(distance) / 1_000.0).rounded())
-
-        // routeTime comes in seconds, but some jobs report a stale/absurd value.
-        guard let time = snap.routeT, time > 0, time < 172_800 else {
-            return "\(km) km"
-        }
-
-        let minutes = max(0, Int((Double(time) / 60.0).rounded()))
-        let hours = minutes / 60
-        let rest = minutes % 60
-        return hours > 0 ? "\(km) km · \(hours)h \(rest)m" : "\(km) km · \(rest) min"
+    private var remainingKm: Int? {
+        guard snap.active, snap.onJob, let distance = snap.routeD, distance > 0 else { return nil }
+        return Int((Double(distance) / 1_000.0).rounded())
     }
 
-    private var coordsText: String {
-        guard snap.active, let x = snap.posX, let z = snap.posZ else {
-            return "X --   Z --"
-        }
-        return String(format: "X %.0f   Z %.0f", x, z)
+    private var remainingText: String {
+        guard let remainingKm else { return "--" }
+        return "\(remainingKm) km"
     }
 
     private var travelledText: String {
-        guard snap.active, snap.onJob, let planned = snap.planned, planned > 0, let routeD = snap.routeD else { return "--" }
-        let remaining = max(0, Int((Double(routeD) / 1000.0).rounded()))
-        let travelled = max(0, Int(planned) - remaining)
-        return "\(travelled) km"
+        guard snap.active, snap.onJob, let planned = snap.planned, planned > 0,
+              let remainingKm else { return "--" }
+        return "\(max(0, Int(planned) - remainingKm)) km"
     }
-    private var odometerText: String {
-        guard snap.active, let o = snap.odometer, o >= 0 else { return "--" }
-        return String(Int(o.rounded()))
+
+    private var progress: Double? {
+        guard snap.active, snap.onJob, let planned = snap.planned, planned > 0,
+              let remainingKm else { return nil }
+        return min(1, max(0, Double(Int(planned) - remainingKm) / Double(planned)))
     }
+
+    private var progressText: String {
+        guard let progress else { return "--" }
+        return "\(Int((progress * 100).rounded()))%"
+    }
+
     private var arrivalText: String {
         guard snap.active, snap.onJob, let t = snap.routeT, t > 0, t < 172_800,
               let gt = snap.gameTime else { return "--" }
         let totalMin = Int(gt) + Int(t / 60)
-        let h = (totalMin / 60) % 24
-        let m = totalMin % 60
-        return String(format: "%02d:%02d", h, m)
+        return String(format: "%02d:%02d", (totalMin / 60) % 24, totalMin % 60)
     }
 
     private var accent: Color {
@@ -3682,157 +3544,137 @@ struct GPSPanelView: View {
     }
 
     private var statusColor: Color {
-        guard snap.active else { return Color.white.opacity(0.25) }
-        return snap.onJob ? ATSColor.green.opacity(0.80) : Color.white.opacity(0.25)
-    }
-
-    private func detailRow(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-                .font(.system(size: FS(8), weight: .bold, design: .default))
-                .tracking(1.5)
-                .foregroundColor(.white.opacity(0.30))
-            Spacer()
-            Text(value)
-                .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.60))
-                .lineLimit(1)
-        }
+        guard snap.active else { return Theme.textTertiary }
+        return snap.onJob ? ATSColor.green : Theme.textTertiary
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "location.north.fill")
-                    .font(.system(size: FS(19), weight: .semibold))
-                    .foregroundColor(accent)
-
-                Text(L10n.t("panel.gps"))
-                    .font(.system(size: FS(15), weight: .bold, design: .default))
-                    .tracking(3)
-                    .foregroundColor(.white.opacity(0.62))
-
-                Spacer()
-
-                Text(statusText)
-                    .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                    .tracking(2)
-                    .foregroundColor(statusColor)
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            PanelHeader(
+                icon: "location.north.fill",
+                title: L10n.t("panel.gps"),
+                status: statusText,
+                statusColor: statusColor,
+                iconColor: accent
+            )
 
             HStack(alignment: .center, spacing: 16) {
                 CompassView(bearing: bearing, accent: accent)
-                    .frame(width: 108, height: 108)
+                    .frame(width: 96, height: 96)
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.t("gps.bearing"))
                         .font(.system(size: FS(10), weight: .bold, design: .default))
-                        .tracking(3)
-                        .foregroundColor(.white.opacity(0.35))
+                        .tracking(1.6)
+                        .foregroundColor(Theme.textTertiary)
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(cardinal)
-                            .font(.system(size: FS(34), weight: .bold, design: .default))
+                            .font(.system(size: FS(32), weight: .bold, design: .default))
                             .foregroundColor(accent)
 
                         Text(bearingText)
-                            .font(.system(size: FS(16), weight: .semibold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.55))
+                            .font(.system(size: FS(14), weight: .semibold, design: .monospaced))
+                            .foregroundColor(Theme.textSecondary)
                     }
-
-                    Text(L10n.t("gps.destination"))
-                        .font(.system(size: FS(10), weight: .bold, design: .default))
-                        .tracking(3)
-                        .foregroundColor(.white.opacity(0.35))
-                        .padding(.top, 3)
-
-                    Text(destination)
-                        .font(.system(size: FS(20), weight: .semibold, design: .default))
-                        .foregroundColor(.white.opacity(0.90))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
                 }
 
                 Spacer(minLength: 0)
-
-                SpeedLimitSignView(limitKmh: snap.active && (snap.limit ?? 0) > 0.5 ? (Double(snap.limit!) * 3.6) : nil)
-                    .frame(width: 88, height: 88)
             }
 
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(L10n.t("gps.origin"))
-                        .font(.system(size: FS(9), weight: .bold, design: .default))
-                        .tracking(2)
-                        .foregroundColor(.white.opacity(0.30))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(L10n.t("gps.destination"))
+                    .font(.system(size: FS(10), weight: .bold, design: .default))
+                    .tracking(1.6)
+                    .foregroundColor(Theme.textTertiary)
 
-                    Text(origin)
-                        .font(.system(size: FS(13), weight: .medium, design: .default))
-                        .foregroundColor(.white.opacity(0.55))
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 10)
-
-                VStack(alignment: .trailing, spacing: 3) {
-                    Text("RUTA RESTANTE")
-                        .font(.system(size: FS(9), weight: .bold, design: .default))
-                        .tracking(2)
-                        .foregroundColor(.white.opacity(0.30))
-
-                    Text(routeText)
-                        .font(.system(size: FS(13), weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.70))
-                        .lineLimit(1)
-                }
+                Text(destination)
+                    .font(.system(size: FS(24), weight: .bold, design: .default))
+                    .foregroundColor(Theme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
             }
 
-            // Progreso de ruta
-            if snap.active, snap.onJob, let planned = snap.planned, planned > 0, let routeD = snap.routeD {
-                let remaining = max(0, Int((Double(routeD) / 1000.0).rounded()))
-                let travelled = max(0, Int(planned) - remaining)
-                let frac = min(1, max(0, Double(travelled) / Double(planned)))
-                VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 10) {
+                Text(origin)
+                    .font(.system(size: FS(11), weight: .semibold, design: .default))
+                    .foregroundColor(Theme.textTertiary)
+                    .lineLimit(1)
+                    .frame(maxWidth: 120, alignment: .leading)
+
+                Rectangle()
+                    .fill(Theme.stroke)
+                    .frame(height: 1)
+                    .frame(maxWidth: .infinity)
+                    .offset(y: 7)
+
+                Image(systemName: "arrowtriangle.right.fill")
+                    .font(.system(size: FS(8)))
+                    .foregroundColor(accent)
+                    .offset(y: 3)
+            }
+
+            if let progress {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("PROGRESO DE RUTA")
-                            .font(.system(size: FS(9), weight: .bold, design: .default))
-                            .tracking(2)
-                            .foregroundColor(.white.opacity(0.30))
+                        Text("PROGRESO")
+                            .font(.system(size: FS(10), weight: .bold, design: .default))
+                            .tracking(1.6)
+                            .foregroundColor(Theme.textTertiary)
                         Spacer()
-                        Text("\\(Int((frac * 100).rounded()))%")
-                            .font(.system(size: FS(9), weight: .semibold, design: .monospaced))
-                            .foregroundColor(ATSColor.cyan.opacity(0.8))
+                        Text(progressText)
+                            .font(.system(size: FS(11), weight: .bold, design: .monospaced))
+                            .foregroundColor(accent)
                     }
+
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.white.opacity(0.06))
+                                .fill(Color.white.opacity(0.07))
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(ATSColor.cyan)
-                                .frame(width: geo.size.width * frac)
+                                .fill(accent)
+                                .frame(width: geo.size.width * progress)
                         }
                     }
                     .frame(height: 6)
                 }
             }
 
-            // Detalle secundario (FH6)
-            VStack(alignment: .leading, spacing: 2) {
-                detailRow("FALTAN", snap.active && snap.onJob ? routeText.split(separator: "·").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? "--" : "--")
-                detailRow("RECORRIDO", travelledText)
-                detailRow("POSICIÓN", coordsText)
-            }
+            Spacer(minLength: 0)
 
-            Text(coordsText)
-                .font(.system(size: FS(10), weight: .medium, design: .monospaced))
-                .tracking(1)
-                .foregroundColor(.white.opacity(0.28))
+            HStack(spacing: 0) {
+                MetricBlock(
+                    label: L10n.t("gps.remaining"),
+                    value: remainingText,
+                    color: Theme.textPrimary,
+                    valueSize: 18
+                )
+
+                Spacer(minLength: 12)
+
+                MetricBlock(
+                    label: L10n.t("gps.travelled"),
+                    value: travelledText,
+                    color: Theme.textSecondary,
+                    valueSize: 18
+                )
+
+                Spacer(minLength: 12)
+
+                MetricBlock(
+                    label: L10n.t("gps.arrival"),
+                    value: arrivalText,
+                    color: Theme.textSecondary,
+                    valueSize: 18,
+                    trailing: true
+                )
+            }
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.white.opacity(0.022))
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .fill(Theme.surface)
         )
     }
 }

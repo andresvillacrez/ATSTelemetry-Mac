@@ -321,7 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateWindowTitle() {
-        let suffix = highContrast ? " (Alto contraste)" : (lightTheme ? " (Claro)" : "")
+        let suffix = highContrast ? " · Alto contraste" : (lightTheme ? " · Claro" : "")
         window?.title = "ATS Telemetry\(suffix)"
     }
 
