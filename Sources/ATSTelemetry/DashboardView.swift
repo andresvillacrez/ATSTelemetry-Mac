@@ -835,7 +835,7 @@ struct OnboardingView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     OnboardingStep(number: "1",
-                        text: "Instala el plugin de telemetría (scs-telemetry.dylib) en ATS/ETS2.")
+                        text: "El instalador copia libscs-telemetry.dylib en ATS/ETS2.")
                     OnboardingStep(number: "2",
                         text: "Abre ATS o ETS2 y espera la conexión.")
                 }
