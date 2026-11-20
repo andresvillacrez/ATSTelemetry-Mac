@@ -1591,6 +1591,20 @@ struct DamagePanelView: View {
         return "OK"
     }
 
+    private var averageDamage: Double? {
+        let values = [truck, trailer, cargo].compactMap { $0 }
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private var tintColor: Color {
+        guard let averageDamage else { return .clear }
+        if averageDamage >= 50 { return ATSColor.red }
+        if averageDamage >= 20 { return ATSColor.orange }
+        if averageDamage >= 5 { return ATSColor.yellow }
+        return ATSColor.green
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PanelHeader(
@@ -1665,6 +1679,10 @@ struct DamagePanelView: View {
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(snap.active ? tintColor.opacity(0.08) : .clear)
+                )
         )
     }
 }
@@ -3062,6 +3080,10 @@ struct FinancialPanelView: View {
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                )
         )
     }
 }
@@ -3380,6 +3402,10 @@ struct CargoPanelView: View {
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                )
         )
     }
 }
@@ -3600,6 +3626,10 @@ struct GPSPanelView: View {
         .background(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .fill(Theme.surface)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(snap.active ? ATSColor.cyan.opacity(0.07) : .clear)
+                )
         )
     }
 }

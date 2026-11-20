@@ -100,6 +100,7 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Tinte de estado: Combustible según nivel/color de barra, Clima según condición y Avisos según tipo de mensaje (con su fade).
 - [x] Logo de marca centrado y ampliado; modelo del camión movido al pie de la imagen de Daños.
 - [x] Eliminado el límite de velocidad del velocímetro; odómetro integrado y más grande.
+- [x] Tintes por panel: GPS cyan; Daños según promedio camión/tráiler/carga; Empresa y Carga con blanco sutil.
 
 ### Validación
 - [x] Build release sin errores.
