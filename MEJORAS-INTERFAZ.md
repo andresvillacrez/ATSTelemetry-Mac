@@ -95,6 +95,8 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Título de ventana `ATS Telemetry · Claro` / `· Alto contraste`.
 - [x] Eliminada la barra de margen, la leyenda de daños y el caption del camión.
 - [x] Un solo lienzo 1920×1080 escalable: Full, Compact (1280×720) y Minimal (960×540) ya no se recortan.
+- [x] CHECK ENGINE centrado en la fila de testigos (7 testigos a cada lado).
+- [x] Tarjetas de Combustible, Avisos y Clima sin título, con contenido centrado horizontal y verticalmente.
 
 ### Validación
 - [x] Build release sin errores.

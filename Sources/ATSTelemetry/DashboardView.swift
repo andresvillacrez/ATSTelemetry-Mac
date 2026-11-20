@@ -1149,41 +1149,29 @@ struct AdvisoryCardView: View {
     private var accent: Color { messages.currentType.color }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PanelHeader(
-                icon: messages.currentType.icon,
-                title: L10n.t("panel.advisory"),
-                iconColor: accent
-            )
-
-            Spacer(minLength: 0)
-
+        VStack(spacing: 9) {
             if let msg = message {
                 Text(msg)
-                    .font(.system(size: FS(16), weight: .semibold, design: .default))
+                    .font(.system(size: FS(18), weight: .semibold, design: .default))
                     .foregroundColor(accent)
                     .opacity(messages.opacity)
-                    .frame(maxWidth: .infinity, alignment: .center)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.75)
             } else {
                 Text(L10n.t("no.advisory"))
-                    .font(.system(size: FS(15), weight: .semibold, design: .default))
+                    .font(.system(size: FS(17), weight: .semibold, design: .default))
                     .foregroundColor(Theme.textDisabled)
-                    .frame(maxWidth: .infinity, alignment: .center)
             }
-
-            Spacer(minLength: 0)
 
             Text(L10n.t("advisory.footer"))
                 .font(.system(size: FS(10), weight: .regular, design: .default))
                 .tracking(1.0)
                 .foregroundColor(Theme.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .center)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(message == nil ? Theme.surface : accent.opacity(0.07))
@@ -1472,15 +1460,15 @@ struct IndicatorRowView: View {
             indicator("low-beam-c", "lightbulb.fill", (snap.active && snap.engine && snap.lowB) || allLampsOn, ATSColor.green)
             indicator("high-beam-c", "sun.max.fill", (snap.active && snap.engine && snap.highB) || allLampsOn, ATSColor.blue)
             indicator("brake-c1", "octagon.fill", (snap.active && snap.engine && snap.brake) || allLampsOn, ATSColor.red)
-
+            indicator("parking-brake-2-c", "hand.raised.fill", (snap.active && snap.engine && snap.park) || allLampsOn, ATSColor.red, pulses: true)
             indicator("turn-lights-left-c", "arrow.left", (snap.active && snap.engine && snap.blinkL) || allLampsOn, ATSColor.green)
+
             CheckEngineCell(
                 active: (snap.active && snap.engine && (snap.engineDmg ?? 0) >= 5) || allLampsOn,
                 engineOn: snap.active && snap.engine
             )
-            indicator("turn-lights-right-c", "arrow.right", (snap.active && snap.engine && snap.blinkR) || allLampsOn, ATSColor.green)
 
-            indicator("parking-brake-2-c", "hand.raised.fill", (snap.active && snap.engine && snap.park) || allLampsOn, ATSColor.red, pulses: true)
+            indicator("turn-lights-right-c", "arrow.right", (snap.active && snap.engine && snap.blinkR) || allLampsOn, ATSColor.green)
             indicator("retarder-c", "gauge.medium", (snap.active && snap.engine && snap.retarder) || allLampsOn, ATSColor.green)
             indicator("engine-brake-round", "engine.combustion", (snap.active && snap.engine && snap.motor) || allLampsOn, ATSColor.green)
             indicator("battery-c", "battery.25", batteryWarning || allLampsOn, ATSColor.red)
@@ -2897,56 +2885,52 @@ struct CompactFuelPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            PanelHeader(
-                icon: "fuelpump.fill",
-                title: L10n.t("panel.fuel"),
-                status: lowFuel && snap.active ? L10n.t("fuel.reserve") : nil,
-                statusColor: ATSColor.red,
-                iconColor: color
-            )
+        HStack(alignment: .center, spacing: 14) {
+            FuelBarView(fraction: animatedFraction, color: color)
+                .frame(width: 20, height: 92)
 
-            HStack(alignment: .center, spacing: 12) {
-                FuelBarView(fraction: animatedFraction, color: color)
-                    .frame(width: 20, height: 92)
-
-                VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(percentText)
-                        .font(.system(size: FS(28), weight: .bold, design: .default))
+                        .font(.system(size: FS(30), weight: .bold, design: .default))
                         .monospacedDigit()
                         .foregroundColor(color)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
 
-                    Text(volumeText)
-                        .font(.system(size: FS(12), weight: .semibold, design: .default))
-                        .monospacedDigit()
-                        .foregroundColor(Theme.textSecondary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 2)
-
-                    HStack(spacing: 5) {
-                        Text(L10n.t("fuel.autonomy"))
+                    if lowFuel && snap.active {
+                        Text(L10n.t("fuel.reserve"))
                             .font(.system(size: FS(10), weight: .bold, design: .default))
                             .tracking(0.8)
-                            .foregroundColor(Theme.textTertiary)
-                        Text(rangeText)
-                            .font(.system(size: FS(14), weight: .semibold, design: .monospaced))
-                            .foregroundColor(Theme.textPrimary)
-                            .lineLimit(1)
+                            .foregroundColor(ATSColor.red)
                     }
+                }
 
-                    Text("CONS. \(consText)")
-                        .font(.system(size: FS(10.5), weight: .semibold, design: .monospaced))
-                        .foregroundColor(Theme.textSecondary)
+                Text(volumeText)
+                    .font(.system(size: FS(12), weight: .semibold, design: .default))
+                    .monospacedDigit()
+                    .foregroundColor(Theme.textSecondary)
+                    .lineLimit(1)
+
+                HStack(spacing: 5) {
+                    Text(L10n.t("fuel.autonomy"))
+                        .font(.system(size: FS(10), weight: .bold, design: .default))
+                        .tracking(0.8)
+                        .foregroundColor(Theme.textTertiary)
+                    Text(rangeText)
+                        .font(.system(size: FS(15), weight: .semibold, design: .monospaced))
+                        .foregroundColor(Theme.textPrimary)
                         .lineLimit(1)
                 }
-                .frame(height: 92, alignment: .topLeading)
+
+                Text("CONS. \(consText)")
+                    .font(.system(size: FS(10.5), weight: .semibold, design: .monospaced))
+                    .foregroundColor(Theme.textSecondary)
+                    .lineLimit(1)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Theme.surface)
@@ -3178,46 +3162,34 @@ struct WeatherPanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            PanelHeader(
-                icon: isDay ? "cloud.sun.fill" : "cloud.moon.fill",
-                title: L10n.t("panel.weather"),
-                status: snap.active ? (isDay ? "DÍA" : "NOCHE") : "—",
-                statusColor: Theme.textTertiary,
-                iconColor: accent
-            )
+        HStack(alignment: .center, spacing: 14) {
+            WeatherGlyph(condition: condition, isDay: isDay)
+                .frame(width: 64, height: 64)
+                .opacity(snap.active ? 1 : 0.28)
 
-            HStack(spacing: 12) {
-                WeatherGlyph(condition: condition, isDay: isDay)
-                    .frame(width: 64, height: 56)
-                    .opacity(snap.active ? 1 : 0.28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(timeText)
+                    .font(.system(size: FS(26), weight: .bold, design: .default))
+                    .monospacedDigit()
+                    .foregroundColor(Theme.textPrimary)
+                    .lineLimit(1)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(timeText)
-                        .font(.system(size: FS(24), weight: .bold, design: .default))
-                        .monospacedDigit()
-                        .foregroundColor(Theme.textPrimary)
-                        .lineLimit(1)
+                Text(L10n.t("weather.gametime"))
+                    .font(.system(size: FS(10), weight: .bold, design: .default))
+                    .tracking(0.8)
+                    .foregroundColor(Theme.textTertiary)
 
-                    Text(L10n.t("weather.gametime"))
-                        .font(.system(size: FS(10), weight: .bold, design: .default))
-                        .tracking(0.8)
-                        .foregroundColor(Theme.textTertiary)
-
-                    Text(conditionText)
-                        .font(.system(size: FS(11), weight: .bold, design: .default))
-                        .tracking(0.8)
-                        .foregroundColor(accent)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .padding(.top, 2)
-                }
-
-                Spacer(minLength: 0)
+                Text(conditionText)
+                    .font(.system(size: FS(12), weight: .bold, design: .default))
+                    .tracking(0.8)
+                    .foregroundColor(accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.top, 1)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(Theme.surface)
