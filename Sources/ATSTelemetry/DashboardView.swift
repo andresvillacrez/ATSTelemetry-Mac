@@ -77,6 +77,57 @@ enum TruckImageLoader {
     }
 }
 
+// MARK: - Cargo image loader (FH6)
+enum CargoImageLoader {
+    private static var cache: [String: NSImage] = [:]
+
+    static func image(for snap: Snap) -> NSImage? {
+        guard snap.active, snap.cargoLoaded else { return nil }
+
+        for name in candidates(for: snap) {
+            if let image = load(name) {
+                return image
+            }
+        }
+        return load("fallback")
+    }
+
+    private static func candidates(for snap: Snap) -> [String] {
+        var result: [String] = []
+
+        if let id = snap.cargoId {
+            let normalized = normalize(id)
+            if !normalized.isEmpty { result.append(normalized) }
+        }
+        if let name = snap.cargoName {
+            let normalized = normalize(name)
+            if !normalized.isEmpty && !result.contains(normalized) {
+                result.append(normalized)
+            }
+        }
+        return result
+    }
+
+    private static func normalize(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .folding(options: .diacriticInsensitive, locale: .current)
+            .replacingOccurrences(of: "cargo.", with: "")
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "-", with: "_")
+    }
+
+    private static func load(_ name: String) -> NSImage? {
+        if let cached = cache[name] { return cached }
+        let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "CargoImages")
+            ?? Bundle.main.url(forResource: name, withExtension: "png")
+        guard let url, let image = NSImage(contentsOf: url) else { return nil }
+        cache[name] = image
+        return image
+    }
+}
+
 // MARK: - Company logo loader (FH6)
 enum CompanyLogoLoader {
     private static var cache: [String: NSImage] = [:]
@@ -414,6 +465,8 @@ enum L10n {
             "gauge.water": "TEMPERATURA",
             "fuel.autonomy": "AUTONOMÍA",
             "finance.drivers": "CONDUCTORES",
+            "finance.trucks": "CAMIONES",
+            "finance.garages": "GARAJES",
             "damage.critical": "CRÍTICO",
             "cruise.label": "CRUCERO",
             "damage.damage": "DAÑO",
@@ -490,6 +543,8 @@ enum L10n {
             "gauge.water": "TEMPERATURE",
             "fuel.autonomy": "AUTONOMY",
             "finance.drivers": "DRIVERS",
+            "finance.trucks": "TRUCKS",
+            "finance.garages": "GARAGES",
             "damage.critical": "CRITICAL",
             "cruise.label": "CRUISE",
             "damage.damage": "DAMAGE",
@@ -1267,23 +1322,6 @@ struct HeaderView: View {
     var body: some View {
         ZStack {
             HStack(alignment: .center) {
-                HStack(spacing: 14) {
-                    Circle()
-                        .fill(status.color)
-                        .frame(width: 9, height: 9)
-                        .shadow(color: status.color.opacity(0.8), radius: 8)
-
-                    Text(L10n.t("header.ats"))
-                        .font(.system(size: FS(24), weight: .heavy, design: .default))
-                        .tracking(8)
-                        .foregroundColor(.white)
-
-                    Text(L10n.t("header.telemetry"))
-                        .font(.system(size: FS(15), weight: .semibold, design: .default))
-                        .tracking(4)
-                        .foregroundColor(.white.opacity(0.45))
-                }
-
                 Spacer()
 
                 // Reloj solo en Minimal (en Full/Compact ya está el panel de Clima).
@@ -3062,18 +3100,42 @@ struct FinancialPanelView: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 8) {
-                if let drivers = snap.hiredDrivers {
-                    SmallChip(icon: "person.2.fill", text: "\(drivers) CONDUCTORES", color: Theme.textSecondary)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    if let drivers = snap.hiredDrivers {
+                        SmallChip(
+                            icon: "person.2.fill",
+                            text: "\(drivers) \(L10n.t("finance.drivers"))",
+                            color: Theme.textSecondary
+                        )
+                    }
+                    if let trucks = snap.trucks {
+                        SmallChip(
+                            icon: "truck.box.fill",
+                            text: "\(trucks) \(L10n.t("finance.trucks"))",
+                            color: Theme.textSecondary
+                        )
+                    }
+                    Spacer(minLength: 0)
                 }
-                if let margin {
-                    SmallChip(
-                        icon: "percent",
-                        text: "MARGEN \(margin)%",
-                        color: margin >= 0 ? ATSColor.green : ATSColor.red
-                    )
+
+                HStack(spacing: 8) {
+                    if let garages = snap.garages {
+                        SmallChip(
+                            icon: "house.fill",
+                            text: "\(garages) \(L10n.t("finance.garages"))",
+                            color: Theme.textSecondary
+                        )
+                    }
+                    if let margin {
+                        SmallChip(
+                            icon: "percent",
+                            text: "MARGEN \(margin)%",
+                            color: margin >= 0 ? ATSColor.green : ATSColor.red
+                        )
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
             }
         }
         .padding(20)
@@ -3393,10 +3455,31 @@ struct CargoPanelView: View {
 
             Spacer(minLength: 0)
 
-            Image(systemName: "shippingbox.fill")
-                .font(.system(size: FS(72), weight: .regular))
-                .foregroundColor(.white.opacity(0.035))
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Theme.surfaceRaised)
+
+                if let image = CargoImageLoader.image(for: snap) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .padding(8)
+                } else {
+                    VStack(spacing: 6) {
+                        Image(systemName: "shippingbox.fill")
+                            .font(.system(size: FS(30), weight: .regular))
+                            .foregroundColor(.white.opacity(0.16))
+                        Text(loaded ? "SIN IMAGEN DE CARGA" : L10n.t("no.cargo"))
+                            .font(.system(size: FS(10), weight: .semibold, design: .default))
+                            .tracking(1.2)
+                            .foregroundColor(Theme.textDisabled)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 150)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

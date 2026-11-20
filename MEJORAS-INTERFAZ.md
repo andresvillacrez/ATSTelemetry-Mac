@@ -102,6 +102,9 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Eliminado el límite de velocidad del velocímetro; odómetro integrado y más grande.
 - [x] Tintes por panel: GPS cyan; Daños según promedio camión/tráiler/carga; Empresa y Carga con blanco sutil.
 - [x] Separación uniforme de 16 px entre los paneles compactos y los paneles laterales.
+- [x] Título `ATS TELEMETRÍA` retirado de la cabecera; queda solo el logo centrado y el estado.
+- [x] Imágenes reales de carga (237 assets de Windows) con fallback para cargas sin imagen.
+- [x] Empresa: corregida la ruta de `profile.sii`; aparecen nombre y logo, más contadores de conductores, camiones y garajes.
 
 ### Validación
 - [x] Build release sin errores.

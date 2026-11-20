@@ -193,6 +193,8 @@ struct Snap {
     var companyName: String?
     var companyLogo: String?
     var hiredDrivers: Int?
+    var garages: Int?
+    var trucks: Int?
 }
 
 // MARK: - POSIX shared memory / SCSTelemetry
@@ -427,6 +429,9 @@ final class TelemetryReader {
             snap.companyName = companyName
             snap.companyLogo = companyLogo
             snap.hiredDrivers = bankReader.currentDrivers()
+            let (garages, trucks) = bankReader.currentFleet()
+            snap.garages = garages
+            snap.trucks = trucks
         }
 
         // If the game closed, drop the old mapping and retry later.
@@ -517,6 +522,8 @@ final class TelemetryReader {
         s.companyName = "TRANSPORTES VILLACREZ"
         s.companyLogo = "logo_4"
         s.hiredDrivers = 4
+        s.garages = 3
+        s.trucks = 6
         s.planned = 350
         s.posX = 1_234.5 + t * 0.8
         s.posY = 0

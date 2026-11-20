@@ -17,6 +17,8 @@ final class BankBalanceReader {
     private var cachedCompanyName: String?
     private var cachedCompanyLogo: String?
     private var cachedHiredDrivers: Int?
+    private var cachedGarages: Int?
+    private var cachedTrucks: Int?
     private var timer: DispatchSourceTimer?
 
     init() {
@@ -59,6 +61,12 @@ final class BankBalanceReader {
         return cachedHiredDrivers
     }
 
+    func currentFleet() -> (Int?, Int?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (cachedGarages, cachedTrucks)
+    }
+
     private func refresh(force: Bool) {
         guard let url = newestSave() else { return }
 
@@ -73,21 +81,22 @@ final class BankBalanceReader {
             return
         }
 
-        guard let balance = SIIBankParser.bankBalance(at: url) else {
+        guard let stats = SIIBankParser.saveStats(at: url) else {
             return
         }
 
-        let profileURL = url.deletingLastPathComponent().appendingPathComponent("profile.sii")
+        let profileURL = SIIBankParser.profileURL(forSave: url)
         let (companyName, companyLogo) = SIIBankParser.profileInfo(at: profileURL)
-        let drivers = SIIBankParser.hiredDrivers(at: url)
 
         lock.lock()
-        cached = balance
+        cached = stats.balance
         lastPath = url.path
         lastModified = modified
         cachedCompanyName = companyName
         cachedCompanyLogo = companyLogo
-        cachedHiredDrivers = drivers
+        cachedHiredDrivers = stats.drivers
+        cachedGarages = stats.garages
+        cachedTrucks = stats.trucks
         lock.unlock()
     }
 
@@ -283,8 +292,25 @@ enum SIIBankParser {
         return inflated as Data
     }
 
-    static func profileInfo(at url: URL) -> (String?, String?) {
-        guard let bytes = try? Data(contentsOf: url), bytes.count >= 4 else {
+    /// profile.sii vive en la raíz del perfil, no en la carpeta del save.
+    /// Subimos hasta cuatro niveles desde game.sii para encontrarlo.
+    static func profileURL(forSave saveURL: URL) -> URL? {
+        var directory = saveURL.deletingLastPathComponent()
+        for _ in 0..<4 {
+            let candidate = directory.appendingPathComponent("profile.sii")
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            let parent = directory.deletingLastPathComponent()
+            if parent == directory { break }
+            directory = parent
+        }
+        return nil
+    }
+
+    static func profileInfo(at url: URL?) -> (String?, String?) {
+        guard let url,
+              let bytes = try? Data(contentsOf: url), bytes.count >= 4 else {
             return (nil, nil)
         }
         guard let signature = readUInt32(bytes, at: 0) else { return (nil, nil) }
@@ -576,6 +602,105 @@ enum SIIBankParser {
         }
 
         return balance
+    }
+
+    struct SaveStats {
+        var balance: Int64?
+        var drivers: Int?
+        var garages: Int?
+        var trucks: Int?
+    }
+
+    static func saveStats(at url: URL) -> SaveStats? {
+        guard let bytes = try? Data(contentsOf: url), bytes.count >= 4 else { return nil }
+        guard let signature = readUInt32(bytes, at: 0) else { return nil }
+        let decoded: Data?
+        if signature == siiNSignature { decoded = bytes }
+        else if signature == scsCSignature { decoded = decryptScsC(bytes) }
+        else { decoded = nil }
+        guard let data = decoded else { return nil }
+        return saveStats(from: data)
+    }
+
+    static func saveStats(from bytes: Data) -> SaveStats? {
+        var reader = Reader(bytes: bytes)
+        var templates: [UInt32: Template] = [:]
+        var balance: Int64?
+        var drivers: [String]?
+        var trucks: [String]?
+        var garagesOwned = 0
+        var sawGarage = false
+
+        do {
+            guard try reader.readUInt32() == bsiiSignature else { return nil }
+            let version = try reader.readUInt32()
+            guard (1...3).contains(version) else { return nil }
+
+            while reader.remaining >= 4 {
+                let blockType = try reader.readUInt32()
+
+                if blockType == 0 {
+                    let valid = try reader.readUInt8() != 0
+                    if !valid { continue }
+                    let structureID = try reader.readUInt32()
+                    let name = try reader.readString()
+                    var fields: [Field] = []
+                    while true {
+                        let type = try reader.readUInt32()
+                        if type == 0 { break }
+                        let fieldName = try reader.readString()
+                        if type == 55 {
+                            let count = Int(try reader.readUInt32())
+                            for _ in 0..<count {
+                                try reader.skip(4)
+                                _ = try reader.readString()
+                            }
+                        }
+                        fields.append(Field(name: fieldName, type: type))
+                    }
+                    if templates[structureID] == nil {
+                        templates[structureID] = Template(name: name, fields: fields)
+                    }
+                } else {
+                    guard let template = templates[blockType] else { return nil }
+                    try reader.skipIdentifier()
+
+                    for field in template.fields {
+                        if template.name == "bank",
+                           field.name == "money_account",
+                           field.type == 49 || field.type == 51 {
+                            balance = Int64(bitPattern: try reader.readUInt64())
+                        } else if template.name == "player",
+                                  field.name == "drivers",
+                                  field.type == 58 || field.type == 60 || field.type == 62 {
+                            drivers = try reader.readIdentifiers()
+                        } else if template.name == "player",
+                                  field.name == "trucks",
+                                  field.type == 58 || field.type == 60 || field.type == 62 {
+                            trucks = try reader.readIdentifiers()
+                        } else if template.name == "garage",
+                                  field.name == "status",
+                                  field.type == 39 {
+                            sawGarage = true
+                            if try reader.readUInt32() != 0 {
+                                garagesOwned += 1
+                            }
+                        } else {
+                            try reader.skipField(type: field.type, version: version)
+                        }
+                    }
+                }
+            }
+        } catch {
+            return nil
+        }
+
+        return SaveStats(
+            balance: balance,
+            drivers: drivers.map { Set($0).count },
+            garages: sawGarage ? garagesOwned : nil,
+            trucks: trucks.map { Set($0).count }
+        )
     }
 
     static func hiredDrivers(at url: URL) -> Int? {
