@@ -18,6 +18,7 @@ private let O_ROUTED = 1060
 private let O_ROUTET = 1064
 private let O_LIMIT = 1068
 private let O_PLANNED = 100
+private let O_RETARDER = 108
 
 private let O_FCAP = 704
 private let O_RPMMAX = 740
@@ -143,6 +144,7 @@ struct Snap {
 
     var park = false
     var motor = false
+    var retarder = false
     var blinkL = false
     var blinkR = false
     var lowB = false
@@ -186,6 +188,11 @@ struct Snap {
     // REV12 does not expose the bank account. This comes from the newest ATS
     // savegame and is refreshed in the background by BankBalanceReader.
     var bankBalance: Int64?
+
+    // From profile.sii (read by BankBalanceReader).
+    var companyName: String?
+    var companyLogo: String?
+    var hiredDrivers: Int?
 }
 
 // MARK: - POSIX shared memory / SCSTelemetry
@@ -327,6 +334,7 @@ func getSnap(_ shm: Shm) -> Snap {
     s.brake = shm.rb(O_BRK) != 0
     s.park = shm.rb(O_PARK) != 0
     s.motor = shm.rb(O_MOTOR) != 0
+    s.retarder = shm.ru(O_RETARDER) > 0
     s.engine = shm.rb(O_ENG) != 0
     s.parking = shm.rb(O_PARKING) != 0
     s.hazard = shm.rb(O_HAZ) != 0
@@ -415,6 +423,10 @@ final class TelemetryReader {
         var snap = applyingWeatherOverride(getSnap(shm))
         if snap.active {
             snap.bankBalance = bankReader.current()
+            let (companyName, companyLogo) = bankReader.currentProfile()
+            snap.companyName = companyName
+            snap.companyLogo = companyLogo
+            snap.hiredDrivers = bankReader.currentDrivers()
         }
 
         // If the game closed, drop the old mapping and retry later.
@@ -441,6 +453,7 @@ final class TelemetryReader {
         s.demo = true
         s.engine = true
         s.motor = true
+        s.retarder = true
         s.rpmMax = 2100
         s.fuelCap = 600
         s.gameTime = UInt32((6 * 60 + Int(t * 30)) % (24 * 60))
@@ -460,7 +473,7 @@ final class TelemetryReader {
         s.range = Float(max(120, 740 - t * 0.06))
         s.speed = 22.2
         s.gear = 10
-        s.cons = 0.00028
+        s.cons = 0.28
         s.cruise = 20.8
         s.limit = 27.7
         s.cruiseOn = true
@@ -501,6 +514,9 @@ final class TelemetryReader {
         s.ferryPay = 0
         s.trainPay = 0
         s.bankBalance = 5_341_147
+        s.companyName = "TRANSPORTES VILLACREZ"
+        s.companyLogo = "logo_4"
+        s.hiredDrivers = 4
         s.planned = 350
         s.posX = 1_234.5 + t * 0.8
         s.posY = 0

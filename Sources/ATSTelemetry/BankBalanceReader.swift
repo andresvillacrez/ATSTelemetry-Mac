@@ -14,6 +14,9 @@ final class BankBalanceReader {
     private var cached: Int64?
     private var lastPath: String?
     private var lastModified: Date?
+    private var cachedCompanyName: String?
+    private var cachedCompanyLogo: String?
+    private var cachedHiredDrivers: Int?
     private var timer: DispatchSourceTimer?
 
     init() {
@@ -44,6 +47,18 @@ final class BankBalanceReader {
         return cached
     }
 
+    func currentProfile() -> (String?, String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (cachedCompanyName, cachedCompanyLogo)
+    }
+
+    func currentDrivers() -> Int? {
+        lock.lock()
+        defer { lock.unlock() }
+        return cachedHiredDrivers
+    }
+
     private func refresh(force: Bool) {
         guard let url = newestSave() else { return }
 
@@ -62,10 +77,17 @@ final class BankBalanceReader {
             return
         }
 
+        let profileURL = url.deletingLastPathComponent().appendingPathComponent("profile.sii")
+        let (companyName, companyLogo) = SIIBankParser.profileInfo(at: profileURL)
+        let drivers = SIIBankParser.hiredDrivers(at: url)
+
         lock.lock()
         cached = balance
         lastPath = url.path
         lastModified = modified
+        cachedCompanyName = companyName
+        cachedCompanyLogo = companyLogo
+        cachedHiredDrivers = drivers
         lock.unlock()
     }
 
@@ -261,6 +283,41 @@ enum SIIBankParser {
         return inflated as Data
     }
 
+    static func profileInfo(at url: URL) -> (String?, String?) {
+        guard let bytes = try? Data(contentsOf: url), bytes.count >= 4 else {
+            return (nil, nil)
+        }
+        guard let signature = readUInt32(bytes, at: 0) else { return (nil, nil) }
+        let decoded: Data?
+        if signature == siiNSignature {
+            decoded = bytes
+        } else if signature == scsCSignature {
+            decoded = decryptScsC(bytes)
+        } else {
+            decoded = nil
+        }
+        guard let data = decoded, let text = String(data: data, encoding: .utf8) else {
+            return (nil, nil)
+        }
+        return (matchProfileValue(text, key: "company_name"),
+                matchProfileValue(text, key: "logo"))
+    }
+
+    private static func matchProfileValue(_ text: String, key: String) -> String? {
+        let pattern = "\\b" + NSRegularExpression.escapedPattern(for: key) + "\\s*:\\s*(?:\"([^\"]*)\"|([^\\s}]+))"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = regex.firstMatch(in: text, range: range) else { return nil }
+        let value: String
+        if match.range(at: 1).location != NSNotFound {
+            value = (text as NSString).substring(with: match.range(at: 1))
+        } else {
+            value = (text as NSString).substring(with: match.range(at: 2))
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private static func parsePlainText(_ bytes: Data) -> Int64? {
         guard let text = String(data: bytes, encoding: .utf8) else { return nil }
         guard let regex = try? NSRegularExpression(
@@ -350,6 +407,24 @@ enum SIIBankParser {
             } else {
                 try skip(parts * 8)
             }
+        }
+        mutating func readIdentifier() throws -> String {
+            let parts = Int(try readUInt8())
+            let count = parts == 0xFF ? 8 : parts * 8
+            guard count >= 0, offset + count <= bytes.count else { throw SIIError.invalidData }
+            let data = bytes[offset..<(offset+count)]
+            offset += count
+            return data.map { String(format: "%02X", $0) }.joined()
+        }
+
+        mutating func readIdentifiers() throws -> [String] {
+            let count = Int(try readUInt32())
+            guard count >= 0, count < 1_000_000 else { throw SIIError.invalidData }
+            var ids: [String] = []
+            for _ in 0..<count {
+                ids.append(try readIdentifier())
+            }
+            return ids
         }
 
         mutating func skipField(type: UInt32, version: UInt32) throws {
@@ -501,5 +576,70 @@ enum SIIBankParser {
         }
 
         return balance
+    }
+
+    static func hiredDrivers(at url: URL) -> Int? {
+        guard let bytes = try? Data(contentsOf: url), bytes.count >= 4 else { return nil }
+        guard let signature = readUInt32(bytes, at: 0) else { return nil }
+        let decoded: Data?
+        if signature == siiNSignature { decoded = bytes }
+        else if signature == scsCSignature { decoded = decryptScsC(bytes) }
+        else { decoded = nil }
+        guard let data = decoded else { return nil }
+        return hiredDrivers(from: data)
+    }
+
+    static func hiredDrivers(from bytes: Data) -> Int? {
+        var reader = Reader(bytes: bytes)
+        var templates: [UInt32: Template] = [:]
+        var drivers: [String] = []
+        do {
+            guard try reader.readUInt32() == bsiiSignature else { return nil }
+            let version = try reader.readUInt32()
+            guard (1...3).contains(version) else { return nil }
+            while reader.remaining >= 4 {
+                let blockType = try reader.readUInt32()
+                if blockType == 0 {
+                    let valid = try reader.readUInt8() != 0
+                    if !valid { continue }
+                    let structureID = try reader.readUInt32()
+                    let name = try reader.readString()
+                    var fields: [Field] = []
+                    while true {
+                        let type = try reader.readUInt32()
+                        if type == 0 { break }
+                        let fieldName = try reader.readString()
+                        if type == 55 {
+                            let count = Int(try reader.readUInt32())
+                            for _ in 0..<count { try reader.skip(4); _ = try reader.readString() }
+                        }
+                        fields.append(Field(name: fieldName, type: type))
+                    }
+                    if templates[structureID] == nil {
+                        templates[structureID] = Template(name: name, fields: fields)
+                    }
+                } else {
+                    guard let template = templates[blockType] else { return nil }
+                    try reader.skipIdentifier()
+                    for field in template.fields {
+                        if template.name == "player", field.name == "drivers" {
+                            switch field.type {
+                            case 58, 60, 62:
+                                let ids = try reader.readIdentifiers()
+                                drivers.append(contentsOf: ids)
+                            default:
+                                try reader.skipField(type: field.type, version: version)
+                            }
+                        } else {
+                            try reader.skipField(type: field.type, version: version)
+                        }
+                    }
+                }
+            }
+        } catch {
+            return nil
+        }
+        let distinct = Set(drivers)
+        return distinct.isEmpty ? nil : distinct.count
     }
 }

@@ -12,9 +12,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$SCRATCH/release/ATSTelemetry" "$APP/Contents/MacOS/ATSTelemetry"
 cp "$ROOT/Info.plist" "$APP/Contents/Info.plist"
+    cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns" 2>/dev/null || cp /tmp/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
-if [ -d "$ROOT/Resources/Indicators" ]; then
-    cp "$ROOT/Resources/Indicators/"*.png "$APP/Contents/Resources/"
+if [ -d "$ROOT/Resources" ]; then
+    # Copia el arbol completo de recursos (indicadores, logos, fotos de camion).
+    cp -R "$ROOT/Resources/." "$APP/Contents/Resources/"
 fi
 
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true

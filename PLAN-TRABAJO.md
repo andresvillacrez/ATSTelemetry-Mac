@@ -3,7 +3,7 @@
 **Proyecto:** ATS Telemetry para macOS  
 **Base de código:** `Mac Os` — SwiftUI/AppKit 0.1.0  
 **Referencia visual y de comportamiento:** `Windows Native Final` v2.7 (FH6)  
-**Estado:** Fase 0 en curso — preparación completada; build y plugin pendientes en macOS  
+**Estado:** v2.7.0 — interfaz FH6 actualizada, integración operativa (2026-11-20)  
 **Última actualización:** 31/10/2026
 
 ---

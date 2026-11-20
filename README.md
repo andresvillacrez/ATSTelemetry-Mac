@@ -243,3 +243,45 @@ El proceso de creación, las decisiones de diseño y el estado de las pruebas de
 la versión 0.1.0 están documentados en [`HISTORIAL.md`](HISTORIAL.md). La
 migración a FH6 v2.7 se registra en
 [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md).
+
+---
+
+## Estado actual (v2.7.0 — 2026-11-20)
+
+La app macOS ha sido actualizada a paridad visual con Windows FH6 v3.2.0:
+
+- Velocímetro 180 km/h con numeración.
+- Testigos 40 px, inactivos al 20 %.
+- Bordes removidos de paneles y gauges.
+- CHECK ENGINE con pulso.
+- Pulso sin ampliación (solo opacidad).
+- Panel GPS simplificado.
+- Combustible centrado + consumo L/100/MPG/gal + marcador de reserva.
+- Panel ESTADO DE CARGA sin TIPO.
+- Imagen del camión ampliada (360×180).
+- Líneas horizontales removidas de gauges/paneles.
+- Minipanel de distancia en panel de GPS.
+- Testigo de crucero subido.
+- Números del kilometraje redistribuidos.
+- Clima eliminado del menú (modo automático).
+- Ajustes por delante del panel principal.
+- Tema claro/alto contraste en caliente.
+- Título de ventana según tema.
+- Submenús con texto claro.
+- Marcos de panel cacheados (drawingGroup).
+- Daños sin fondo + etiqueta de severidad (daltonismo).
+- Avisos con fondo tintado por tipo.
+- Overlay de diagnóstico (FPS + frame time).
+- Botones Ajustes/Créditos solo en Full.
+- Diálogo de Créditos ampliado.
+- Reflow para 150 %.
+- Unidades métrico/imperial (toggle).
+- Contraste elevado.
+- Clima en cabecera en modo Compact.
+
+### Compilar
+```zsh
+chmod +x build_app.sh
+./build_app.sh
+open "ATS Telemetry.app" --args --demo
+```

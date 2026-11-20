@@ -6,6 +6,8 @@
     <string>es</string>
     <key>CFBundleDisplayName</key>
     <string>ATS Telemetry</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleExecutable</key>
     <string>ATSTelemetry</string>
     <key>CFBundleIdentifier</key>
@@ -17,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>2.7.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2.7.0</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key>
