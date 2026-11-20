@@ -826,7 +826,7 @@ struct OnboardingView: View {
         ZStack {
             Color.black.opacity(0.62)
             VStack(spacing: 20) {
-                Text("ATS TELEMETRÍA")
+                Text("ESPERANDO ATS")
                     .font(.system(size: FS(TypeScale.title), weight: .bold, design: .default))
                     .foregroundColor(Theme.textPrimary)
                 Text("Primer arranque sin juego")
