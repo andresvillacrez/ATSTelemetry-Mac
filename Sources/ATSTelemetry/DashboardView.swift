@@ -944,11 +944,12 @@ struct DashboardContent: View {
             }
 
             if layout.showBottomCards {
-                // Fila inferior alineada con los paneles laterales: 464 ... 1456
+                // Fila inferior con separación uniforme de 16 px entre todos los paneles:
+                // 464 | 16 | 480 ... 744 | 16 | 760 ... 1160 | 16 | 1176 ... 1440 | 16 | 1456
                 CompactFuelPanelView(snap: snap)
-                    .frame(width: 280, height: 142)
+                    .frame(width: 264, height: 142)
                     .drawingGroup()
-                    .position(x: 604, y: 865)
+                    .position(x: 612, y: 865)
 
                 AdvisoryCardView(snap: snap, messages: messages)
                     .frame(width: 400, height: 142)
@@ -956,9 +957,9 @@ struct DashboardContent: View {
                     .position(x: 960, y: 865)
 
                 WeatherPanelView(snap: snap)
-                    .frame(width: 280, height: 142)
+                    .frame(width: 264, height: 142)
                     .drawingGroup()
-                    .position(x: 1316, y: 865)
+                    .position(x: 1308, y: 865)
             }
 
             FooterView(snap: snap)

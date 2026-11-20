@@ -101,6 +101,7 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Logo de marca centrado y ampliado; modelo del camión movido al pie de la imagen de Daños.
 - [x] Eliminado el límite de velocidad del velocímetro; odómetro integrado y más grande.
 - [x] Tintes por panel: GPS cyan; Daños según promedio camión/tráiler/carga; Empresa y Carga con blanco sutil.
+- [x] Separación uniforme de 16 px entre los paneles compactos y los paneles laterales.
 
 ### Validación
 - [x] Build release sin errores.
