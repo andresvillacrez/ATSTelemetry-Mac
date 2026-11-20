@@ -1,0 +1,75 @@
+#!/bin/bash
+# Instala libscs-telemetry.dylib en ATS/ETS2 si el juego existe y aún no tiene el plugin.
+set -u
+
+LOG="/tmp/ATS-Telemetry-installer.log"
+{
+    echo "=== $(/bin/date) ==="
+    echo "Instalando plugin de telemetría en ATS/ETS2..."
+} >> "$LOG" 2>&1
+exec >> "$LOG" 2>&1
+
+SRC="/Applications/ATS Telemetry.app/Contents/Resources/Plugins/libscs-telemetry.dylib"
+if [ ! -f "$SRC" ]; then
+    echo "No se encontró el plugin empaquetado: $SRC"
+    exit 0
+fi
+
+console_user="$(/usr/bin/stat -f '%Su' /dev/console 2>/dev/null || true)"
+user_home=""
+if [ -n "$console_user" ] && [ "$console_user" != "root" ] && [ "$console_user" != "loginwindow" ]; then
+    user_home="$(/usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')"
+fi
+if [ -z "$user_home" ] || [ ! -d "$user_home" ]; then
+    user_home="/Users/$(/usr/bin/id -un)"
+fi
+
+install_plugin() {
+    local app="$1"
+    [ -d "$app" ] || return 0
+
+    local plugins="$app/Contents/MacOS/plugins"
+    local dest="$plugins/libscs-telemetry.dylib"
+
+    if [ -f "$dest" ]; then
+        echo "Plugin ya presente: $app"
+        return 0
+    fi
+
+    if ! /bin/mkdir -p "$plugins" 2>/dev/null; then
+        echo "No se pudo crear: $plugins"
+        return 0
+    fi
+
+    if /usr/bin/install -m 755 "$SRC" "$dest" 2>/dev/null; then
+        /usr/bin/xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
+        echo "Plugin instalado: $app"
+    else
+        echo "No se pudo copiar el plugin: $app"
+    fi
+}
+
+install_for_library() {
+    local lib="$1"
+    [ -n "$lib" ] || return 0
+    [ -d "$lib" ] || return 0
+    for game in "American Truck Simulator" "Euro Truck Simulator 2"; do
+        install_plugin "$lib/steamapps/common/$game/$game.app"
+    done
+}
+
+steam="$user_home/Library/Application Support/Steam"
+install_for_library "$steam"
+
+vdf="$steam/steamapps/libraryfolders.vdf"
+if [ -f "$vdf" ]; then
+    while IFS= read -r lib; do
+        [ -n "$lib" ] && install_for_library "$lib"
+    done < <(/usr/bin/sed -n 's/.*"path"[[:space:]]*"\(.*\)".*/\1/p' "$vdf")
+fi
+
+install_plugin "/Applications/American Truck Simulator.app"
+install_plugin "/Applications/Euro Truck Simulator 2.app"
+
+echo "Fin de la instalación del plugin."
+exit 0

@@ -1,0 +1,5 @@
+#!/bin/bash
+# Cierra ATS Telemetry si está abierto y elimina la copia anterior de /Applications.
+/usr/bin/pkill -x ATSTelemetry 2>/dev/null || true
+/bin/rm -rf "/Applications/ATS Telemetry.app"
+exit 0

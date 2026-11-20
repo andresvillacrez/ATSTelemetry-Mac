@@ -17,6 +17,8 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Tag `mac-v2.7.0` creado.
 - [x] App final compilada (`ATS Telemetry.app`).
 - [x] ZIP de distribución generado (`ATS-Telemetry-macOS-2.7.0.zip`).
+- [x] Instalador `.pkg` con app + plugin de telemetría para ATS/ETS2
+  (`ATS-Telemetry-Installer-2.7.0.pkg`, generado con `build_installer.sh`).
 
 ### Pendiente opcional (alto riesgo)
 - Drag & drop de layout (Ctrl+Shift+E) — requiere refactor mayor de posiciones.

@@ -246,6 +246,25 @@ migración a FH6 v2.7 se registra en
 
 ---
 
+## Instalador macOS
+
+Para generar el instalador:
+
+```bash
+bash build_installer.sh
+```
+
+Genera `ATS-Telemetry-Installer-2.7.0.pkg`, que:
+
+- Copia `ATS Telemetry.app` a `/Applications`.
+- Instala `libscs-telemetry.dylib` en ATS y ETS2 si están instalados y aún no
+  tienen el plugin.
+- No sobrescribe un plugin existente.
+- Deja el registro en `/tmp/ATS-Telemetry-installer.log`.
+
+El paquete no está firmado con Developer ID; si macOS lo bloquea, usar
+clic derecho sobre el `.pkg` > **Abrir**.
+
 ## Estado actual (v2.7.0 — 2026-11-20)
 
 La app macOS ha sido actualizada a paridad visual con Windows FH6 v3.2.0:

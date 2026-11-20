@@ -19,6 +19,7 @@ if [ -d "$ROOT/Resources" ]; then
     cp -R "$ROOT/Resources/." "$APP/Contents/Resources/"
 fi
 
+chmod -R u+rwX,go+rX "$APP" 2>/dev/null || true
 codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
 
 echo "App lista: $APP"
