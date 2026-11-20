@@ -722,6 +722,45 @@ struct SmallChip: View {
     }
 }
 
+struct FleetStatView: View {
+    let icon: String
+    let value: Int?
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Image(systemName: icon)
+                .font(.system(size: FS(16), weight: .semibold))
+                .foregroundColor(Theme.textSecondary)
+                .frame(height: 18)
+
+            Text(value.map(String.init) ?? "--")
+                .font(.system(size: FS(28), weight: .bold, design: .default))
+                .monospacedDigit()
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+
+            Text(label)
+                .font(.system(size: FS(9), weight: .bold, design: .default))
+                .tracking(0.7)
+                .foregroundColor(Theme.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.045))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Theme.stroke, lineWidth: 1)
+                )
+        )
+    }
+}
+
 struct HeaderIconButton: View {
     let symbol: String
     let help: String
@@ -1921,13 +1960,6 @@ struct WarningLampView: View {
 struct RpmBarView: View {
     let snap: Snap
     var width: CGFloat = 330
-    @State private var ignitionStart: Date? = nil
-    @State private var prevEngine: Bool = false
-    @State private var smoothedRpm: Double = 0
-    @State private var animatedRpm = AnimatedValue()
-    @State private var lastFrame: Date = Date()
-
-    private func smoothStep(_ t: Double) -> Double { let c=min(1,max(0,t)); return c*c*(3-2*c) }
 
     private var rpm: Double {
         guard snap.active, let v = snap.rpm else { return 0 }
@@ -1937,16 +1969,9 @@ struct RpmBarView: View {
         let v = Double(snap.rpmMax ?? 0)
         return v >= 800 ? v : 2500
     }
-    private var realFraction: Double { maxRpm > 0 ? min(1, rpm / maxRpm) : 0 }
-    private var animatedFraction: Double {
-        guard snap.active, snap.engine, let start = ignitionStart else { return smoothedRpm / max(1, maxRpm) }
-        let elapsed = Date().timeIntervalSince(start)
-        if elapsed >= 2.1 { return smoothedRpm / max(1, maxRpm) }
-        if elapsed < 0.9 { return smoothStep(elapsed/0.9) }
-        if elapsed < 1.05 { return 1.0 }
-        return 1.0 + (smoothedRpm / max(1, maxRpm) - 1.0) * smoothStep((elapsed-1.05)/1.05)
+    private var fraction: Double {
+        maxRpm > 0 ? min(1, max(0, rpm / maxRpm)) : 0
     }
-    private var fraction: Double { animatedFraction }
 
     var body: some View {
         VStack(spacing: 2) {
@@ -1968,28 +1993,6 @@ struct RpmBarView: View {
             Text(snap.active ? "\(Int(rpm.rounded())) RPM" : "-- RPM")
                 .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
                 .foregroundColor(.white.opacity(0.55))
-        }
-        .onChange(of: snap.engine) { _, newValue in
-            if newValue && !prevEngine { ignitionStart = Date() }
-            prevEngine = newValue
-            if !newValue { ignitionStart = nil }
-        }
-        .onAppear {
-            if snap.active && snap.engine { ignitionStart = Date() }
-            prevEngine = snap.engine
-            smoothedRpm = rpm
-        }
-        .onReceive(Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()) { _ in
-            let now = Date()
-            let dt = min(0.05, max(0, now.timeIntervalSince(lastFrame)))
-            lastFrame = now
-            let target = snap.active ? rpm : 0
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || UserDefaults.standard.bool(forKey: "ATS.reduceMotion") {
-                animatedRpm.snap(target)
-            } else {
-                animatedRpm.update(target: target, dt: dt)
-            }
-            smoothedRpm = animatedRpm.current
         }
     }
 }
@@ -3101,40 +3104,30 @@ struct FinancialPanelView: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    if let drivers = snap.hiredDrivers {
-                        SmallChip(
-                            icon: "person.2.fill",
-                            text: "\(drivers) \(L10n.t("finance.drivers"))",
-                            color: Theme.textSecondary
-                        )
-                    }
-                    if let trucks = snap.trucks {
-                        SmallChip(
-                            icon: "truck.box.fill",
-                            text: "\(trucks) \(L10n.t("finance.trucks"))",
-                            color: Theme.textSecondary
-                        )
-                    }
-                    Spacer(minLength: 0)
+                HStack(spacing: 10) {
+                    FleetStatView(
+                        icon: "person.2.fill",
+                        value: snap.hiredDrivers,
+                        label: L10n.t("finance.drivers")
+                    )
+                    FleetStatView(
+                        icon: "truck.box.fill",
+                        value: snap.trucks,
+                        label: L10n.t("finance.trucks")
+                    )
+                    FleetStatView(
+                        icon: "house.fill",
+                        value: snap.garages,
+                        label: L10n.t("finance.garages")
+                    )
                 }
 
-                HStack(spacing: 8) {
-                    if let garages = snap.garages {
-                        SmallChip(
-                            icon: "house.fill",
-                            text: "\(garages) \(L10n.t("finance.garages"))",
-                            color: Theme.textSecondary
-                        )
-                    }
-                    if let margin {
-                        SmallChip(
-                            icon: "percent",
-                            text: "MARGEN \(margin)%",
-                            color: margin >= 0 ? ATSColor.green : ATSColor.red
-                        )
-                    }
-                    Spacer(minLength: 0)
+                if let margin {
+                    SmallChip(
+                        icon: "percent",
+                        text: "MARGEN \(margin)%",
+                        color: margin >= 0 ? ATSColor.green : ATSColor.red
+                    )
                 }
             }
         }

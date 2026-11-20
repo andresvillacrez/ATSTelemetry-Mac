@@ -105,6 +105,8 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Título `ATS TELEMETRÍA` retirado de la cabecera; queda solo el logo centrado y el estado.
 - [x] Imágenes reales de carga (237 assets de Windows) con fallback para cargas sin imagen.
 - [x] Empresa: corregida la ruta de `profile.sii`; aparecen nombre y logo, más contadores de conductores, camiones y garajes.
+- [x] Barra de RPM proporcional y directa al régimen real: llena la barra al llegar al máximo.
+- [x] Contadores de flota como tarjetas grandes en una fila: icono, número destacado y etiqueta debajo.
 
 ### Validación
 - [x] Build release sin errores.
