@@ -5,15 +5,13 @@ Panel nativo de telemetría para **American Truck Simulator (ATS)** y
 **1920×1080**. Lee `/SCSTelemetry` en modo **solo lectura** y no modifica los
 plugins de Ajazz.
 
-> **Estado (31/10/2026):** esta carpeta contiene la base nativa macOS **0.1.0**,
-> anterior al rediseño FH6. El objetivo activo es llevarla a **FH6 v2.7**,
-> usando `Windows Native Final` como referencia visual y de comportamiento.
-> El plan por fases está en [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md) y el estado de
-> la preparación en [`FASE-0.md`](FASE-0.md).
->
-> La sección [Funcionalidad actual](#funcionalidad-actual-010) describe la
-> versión 0.1.0; **no** es el estado final. Las diferencias con la v2.7 están
-> resumidas más abajo.
+> **Estado (20/11/2026):** app macOS **2.7.0** publicada con paridad visual
+> FH6, clima/hora/combustible en vivo, rediseño de interfaz e instalador PKG.
+> La sección [Estado actual (v2.7.0)](#estado-actual-v270--2026-11-20) describe
+> la versión publicada. El plan por fases queda en
+> [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md).
+
+![ATS Telemetry 2.7.0](screenshots/ats-telemetry-2.7.0.png)
 
 ---
 
