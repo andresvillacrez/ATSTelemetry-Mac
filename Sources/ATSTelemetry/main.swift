@@ -170,8 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        // Clima: modo automatico fijo (sin selector manual, como en Windows v3.2.0)
-        reader.weatherOverride = nil
+        // El clima se lee en tiempo real de la memoria del juego.
         menu.addItem(.separator())
 
         let clickItem = NSMenuItem(title: "Clic a través", action: #selector(toggleClickThrough), keyEquivalent: "")

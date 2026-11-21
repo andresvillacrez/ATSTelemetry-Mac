@@ -2900,12 +2900,8 @@ struct CompactFuelPanelView: View {
             }
         }
 
-        // Parado o ralentí: L/h (o gal/h) en lugar de un L/100 sin sentido.
-        guard let rate = snap.instantFuelRate, rate > 0.1 else { return "--" }
-        if fuelUnit == 0 {
-            return String(format: "%.1f L/h", rate)
-        }
-        return String(format: "%.1f gal/h", Double(rate) * 0.264172)
+        // Parado o ralentí: el consumo por distancia no tiene sentido.
+        return "--"
     }
 
     var body: some View {

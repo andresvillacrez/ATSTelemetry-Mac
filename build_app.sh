@@ -20,6 +20,10 @@ if [ -d "$ROOT/Resources" ]; then
 fi
 
 chmod -R u+rwX,go+rX "$APP" 2>/dev/null || true
-codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+if [ -f "$ROOT/ATSTelemetry.entitlements" ]; then
+    codesign --force --deep --sign - --entitlements "$ROOT/ATSTelemetry.entitlements" "$APP" >/dev/null 2>&1 || true
+else
+    codesign --force --deep --sign - "$APP" >/dev/null 2>&1 || true
+fi
 
 echo "App lista: $APP"

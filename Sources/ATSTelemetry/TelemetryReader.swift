@@ -116,7 +116,6 @@ struct Snap {
     var range: Float?
     var cons: Float?
     var instantCons: Float?      // L/100 km, ventana móvil
-    var instantFuelRate: Float?  // L/h, ralentí o ventana móvil
     var cruise: Float?
     var limit: Float?
     var rpmMax: Float?
@@ -300,6 +299,7 @@ func getSnap(_ shm: Shm) -> Snap {
     s.active = true
     s.paused = shm.rb(O_PAUSED) != 0
     s.ats = shm.ru(O_GAME) == 2
+    // Hora del juego directa del SDK, en minutos absolutos (sin estado previo).
     s.gameTime = shm.ru(O_TIME_ABS)
 
     s.speed = shm.rf(O_SPEED)
@@ -347,8 +347,8 @@ func getSnap(_ shm: Shm) -> Snap {
     s.diffLock = shm.rb(O_DIFF) != 0
     s.wipers = shm.rb(O_WIPERS)
 
-    // REV12 does not expose cloud cover or storm state. Wipers are the only
-    // available rain hint; the menu can override this with a manual state.
+    // Respaldo inmediato; el lector de memoria del juego lo sobrescribe cuando
+    // consigue el estado real (nublado, lluvia o tormenta).
     s.weather = s.wipers > 0 ? .rain : .clear
 
     s.airPressure = shm.rf(O_AIR)
@@ -410,10 +410,10 @@ final class TelemetryReader {
     private var consumptionSamples: [(time: TimeInterval, fuel: Float, distanceKm: Double)] = []
     private var lastFuelSample: (time: TimeInterval, fuel: Float)?
     private var lastSpeedSample: Float?
+    private var lastOdometerSample: Float?
 
-    // Manual weather selection from the status menu. When nil, the reader
-    // infers rain from the wipers and otherwise reports clear weather.
-    var weatherOverride: WeatherCondition?
+    // Clima real leído de la memoria del juego (igual que WeatherReader.cs).
+    private let weatherReader = WeatherReader()
 
     init(demoMode: Bool = ProcessInfo.processInfo.arguments.contains("--demo")) {
         self.demoMode = demoMode
@@ -421,7 +421,7 @@ final class TelemetryReader {
 
     func snapshot() -> Snap {
         if demoMode {
-            return applyingWeatherOverride(demoSnapshot())
+            return demoSnapshot()
         }
 
         let now = Date.timeIntervalSinceReferenceDate
@@ -430,8 +430,12 @@ final class TelemetryReader {
             _ = shm.tryOpen(checkSDK: true)
         }
 
-        var snap = applyingWeatherOverride(getSnap(shm))
+        var snap = getSnap(shm)
         if snap.active {
+            if let weather = weatherReader.read(ats: snap.ats) {
+                snap.weather = weather
+            }
+
             snap.bankBalance = bankReader.current()
             let (companyName, companyLogo) = bankReader.currentProfile()
             snap.companyName = companyName
@@ -460,10 +464,12 @@ final class TelemetryReader {
         consumptionSamples.removeAll(keepingCapacity: true)
         lastFuelSample = nil
         lastSpeedSample = nil
+        lastOdometerSample = nil
     }
 
     private func updateInstantConsumption(_ snap: inout Snap, now: TimeInterval) {
-        guard snap.engine, let fuel = snap.fuel, fuel > 0 else {
+        guard snap.engine, let fuel = snap.fuel, fuel > 0,
+              let odometer = snap.odometer, odometer >= 0 else {
             resetConsumptionTracking()
             return
         }
@@ -480,9 +486,10 @@ final class TelemetryReader {
             }
         }
 
-        guard let last = lastFuelSample else {
+        guard let last = lastFuelSample, let lastOdometer = lastOdometerSample else {
             lastFuelSample = (now, fuel)
             lastSpeedSample = speed
+            lastOdometerSample = odometer
             consumptionSamples.removeAll(keepingCapacity: true)
             return
         }
@@ -491,6 +498,8 @@ final class TelemetryReader {
         if dt <= 0 || dt > 2.0 {
             resetConsumptionTracking()
             lastFuelSample = (now, fuel)
+            lastSpeedSample = speed
+            lastOdometerSample = odometer
             return
         }
 
@@ -498,11 +507,21 @@ final class TelemetryReader {
         if fuel > last.fuel + 0.02 || fuel < last.fuel - 5.0 {
             resetConsumptionTracking()
             lastFuelSample = (now, fuel)
+            lastSpeedSample = speed
+            lastOdometerSample = odometer
             return
         }
 
-        let speedMps = abs(Double(speed))
-        let distanceKm = speedMps * dt / 1000.0
+        // El odómetro y el combustible comparten la escala de tiempo del juego;
+        // usar la velocidad real desincronizaba el cálculo cuando el juego acelera el tiempo.
+        let distanceKm = Double(odometer - lastOdometer)
+        if distanceKm < 0 || distanceKm > 5.0 {
+            resetConsumptionTracking()
+            lastFuelSample = (now, fuel)
+            lastSpeedSample = speed
+            lastOdometerSample = odometer
+            return
+        }
         consumptionSamples.append((time: now, fuel: fuel, distanceKm: distanceKm))
 
         while let first = consumptionSamples.first, now - first.time > 20.0 {
@@ -511,25 +530,15 @@ final class TelemetryReader {
 
         lastFuelSample = (now, fuel)
         lastSpeedSample = speed
+        lastOdometerSample = odometer
 
         guard let first = consumptionSamples.first else { return }
         let span = now - first.time
         let distance = consumptionSamples.reduce(0.0) { $0 + $1.distanceKm }
         let used = max(0.0, Double(first.fuel - fuel))
 
-        guard span >= 5.0, used > 0.001 else { return }
-
-        if distance > 0.03 {
-            snap.instantCons = Float(used / distance * 100.0)
-        }
-        snap.instantFuelRate = Float(used / (span / 3600.0))
-    }
-
-    private func applyingWeatherOverride(_ snap: Snap) -> Snap {
-        guard let weatherOverride else { return snap }
-        var result = snap
-        result.weather = weatherOverride
-        return result
+        guard span >= 5.0, used > 0.001, distance > 0.03 else { return }
+        snap.instantCons = Float(used / distance * 100.0)
     }
 
     private func demoSnapshot() -> Snap {
@@ -563,7 +572,6 @@ final class TelemetryReader {
         s.gear = 10
         s.cons = 0.28
         s.instantCons = 28.0
-        s.instantFuelRate = 22.4
         s.cruise = 20.8
         s.limit = 27.7
         s.cruiseOn = true

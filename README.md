@@ -246,6 +246,19 @@ migración a FH6 v2.7 se registra en
 
 ---
 
+## Hora y clima en vivo
+
+- **Hora:** se lee directamente del canal `time_abs` del SDK (`O_TIME_ABS`), en
+  minutos de juego. No usa la hora del sistema ni un estado anterior.
+- **Clima ATS:** `WeatherReader` lee el objeto `economy` de la build Mac
+  1.62.2.2. El puntero está en `__DATA` (`+0x3C18B80`) y los campos de clima en
+  `+0x4FC` (timer), `+0x500` (índice) y `+0x5F4` (humedad). Requiere el
+  entitlement de depuración para `task_for_pid`; el juego ya trae
+  `get-task-allow`.
+- **ETS2:** al no haber una build instalada para verificar su offset Mac, el
+  panel usa el respaldo en vivo de los limpiabrisas. Cuando se instale ETS2 se
+  puede calcular su offset equivalente.
+
 ## Instalador macOS
 
 Para generar el instalador:
