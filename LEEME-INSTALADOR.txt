@@ -1,0 +1,22 @@
+ATS Telemetry — Instalador macOS
+=================================
+
+Doble clic en ATS-Telemetry-Installer-2.7.0.pkg para instalar.
+
+El instalador:
+  1. Copia ATS Telemetry.app a /Applications.
+  2. Instala libscs-telemetry.dylib en ATS y ETS2 si están instalados
+     y todavía no tienen el plugin.
+  3. No sobrescribe un plugin que ya exista.
+  4. Cierra ATS Telemetry antes de actualizar la app.
+
+Después de instalar, abre ATS Telemetry y arranca ATS/ETS2.
+Si el juego estaba abierto, ciérralo y vuelve a abrirlo para que cargue el plugin.
+
+Registro de instalación del plugin:
+  /tmp/ATS-Telemetry-installer.log
+
+Si macOS bloquea el instalador por no estar firmado:
+  clic derecho sobre el .pkg > Abrir.
+
+El instalador no instala ETS2; si el juego no está presente, ese paso se omite.

@@ -13,3 +13,7 @@ xcuserdata/
 # Residuos de PyInstaller ajenos a la app (revisar antes de borrar)
 /main.py
 /TuAplicacion.spec
+
+# Artefactos de release (se publican como assets, no en git)
+ATS-Telemetry-Installer-*.pkg
+ATS-Telemetry-macOS-*.zip
