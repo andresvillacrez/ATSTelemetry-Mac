@@ -17,3 +17,6 @@ xcuserdata/
 # Artefactos de release (se publican como assets, no en git)
 ATS-Telemetry-Installer-*.pkg
 ATS-Telemetry-macOS-*.zip
+
+# Metadatos de macOS
+._*
