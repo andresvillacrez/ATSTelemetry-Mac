@@ -115,6 +115,8 @@ struct Snap {
     var fuelCap: Float?
     var range: Float?
     var cons: Float?
+    var instantCons: Float?      // L/100 km, ventana móvil
+    var instantFuelRate: Float?  // L/h, ralentí o ventana móvil
     var cruise: Float?
     var limit: Float?
     var rpmMax: Float?
@@ -403,6 +405,12 @@ final class TelemetryReader {
     private let demoStart = Date.timeIntervalSinceReferenceDate
     private var lastOpenAttempt: TimeInterval = 0
 
+    // Consumo instantáneo calculado con el nivel de combustible y la distancia
+    // recorrida. El SDK solo expone el promedio histórico.
+    private var consumptionSamples: [(time: TimeInterval, fuel: Float, distanceKm: Double)] = []
+    private var lastFuelSample: (time: TimeInterval, fuel: Float)?
+    private var lastSpeedSample: Float?
+
     // Manual weather selection from the status menu. When nil, the reader
     // infers rain from the wipers and otherwise reports clear weather.
     var weatherOverride: WeatherCondition?
@@ -434,12 +442,87 @@ final class TelemetryReader {
             snap.trucks = trucks
         }
 
+        if snap.active && !snap.paused {
+            updateInstantConsumption(&snap, now: now)
+        } else {
+            resetConsumptionTracking()
+        }
+
         // If the game closed, drop the old mapping and retry later.
         if !snap.active && shm.base != nil {
             shm.closeShm()
         }
 
         return snap
+    }
+
+    private func resetConsumptionTracking() {
+        consumptionSamples.removeAll(keepingCapacity: true)
+        lastFuelSample = nil
+        lastSpeedSample = nil
+    }
+
+    private func updateInstantConsumption(_ snap: inout Snap, now: TimeInterval) {
+        guard snap.engine, let fuel = snap.fuel, fuel > 0 else {
+            resetConsumptionTracking()
+            return
+        }
+
+        let speed = snap.speed ?? 0
+        if let previousSpeed = lastSpeedSample {
+            let wasStopped = abs(previousSpeed) < 0.3
+            let isStopped = abs(speed) < 0.3
+            if wasStopped != isStopped {
+                resetConsumptionTracking()
+                lastFuelSample = (now, fuel)
+                lastSpeedSample = speed
+                return
+            }
+        }
+
+        guard let last = lastFuelSample else {
+            lastFuelSample = (now, fuel)
+            lastSpeedSample = speed
+            consumptionSamples.removeAll(keepingCapacity: true)
+            return
+        }
+
+        let dt = now - last.time
+        if dt <= 0 || dt > 2.0 {
+            resetConsumptionTracking()
+            lastFuelSample = (now, fuel)
+            return
+        }
+
+        // Repostaje o salto de carga: reiniciar la ventana.
+        if fuel > last.fuel + 0.02 || fuel < last.fuel - 5.0 {
+            resetConsumptionTracking()
+            lastFuelSample = (now, fuel)
+            return
+        }
+
+        let speedMps = abs(Double(speed))
+        let distanceKm = speedMps * dt / 1000.0
+        consumptionSamples.append((time: now, fuel: fuel, distanceKm: distanceKm))
+
+        while let first = consumptionSamples.first, now - first.time > 20.0 {
+            consumptionSamples.removeFirst()
+        }
+
+        lastFuelSample = (now, fuel)
+        lastSpeedSample = speed
+
+        guard let first = consumptionSamples.first else { return }
+        let span = now - first.time
+        let distance = consumptionSamples.reduce(0.0) { $0 + $1.distanceKm }
+        let used = max(0.0, Double(first.fuel - fuel))
+
+        guard span >= 5.0, used > 0.001 else { return }
+
+        if distance > 0.03 {
+            snap.instantCons = Float(used / distance * 100.0)
+        }
+        snap.instantFuelRate = Float(used / (span / 3600.0))
     }
 
     private func applyingWeatherOverride(_ snap: Snap) -> Snap {
@@ -479,6 +562,8 @@ final class TelemetryReader {
         s.speed = 22.2
         s.gear = 10
         s.cons = 0.28
+        s.instantCons = 28.0
+        s.instantFuelRate = 22.4
         s.cruise = 20.8
         s.limit = 27.7
         s.cruiseOn = true

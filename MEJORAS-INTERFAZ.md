@@ -109,6 +109,8 @@ paso a paso (ver `INTEGRACION-PENDIENTE.md`).
 - [x] Empresa: corregida la ruta de `profile.sii`; aparecen nombre y logo, más contadores de conductores, camiones y garajes.
 - [x] Barra de RPM proporcional y directa al régimen real: llena la barra al llegar al máximo.
 - [x] Contadores de flota como tarjetas grandes en una fila: icono, número destacado y etiqueta debajo.
+- [x] Consumo instantáneo calculado con nivel de combustible + distancia (ventana móvil); L/h en ralentí.
+- [x] Perfil de ATS con consumo realista (`g_fuel_simulation 1`) y backup del `config.cfg` del perfil.
 
 ### Validación
 - [x] Build release sin errores.

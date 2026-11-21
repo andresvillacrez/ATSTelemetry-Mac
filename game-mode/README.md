@@ -24,6 +24,16 @@ ni cambiar ajustes visuales de macOS.
 - **No cambia** sombras, SSAO, espejos, texturas, escalado ni ninguna opción de
   calidad gráfica.
 
+## Consumo de combustible
+
+El perfil tenía `g_fuel_simulation 0` (consumo no realista). Se cambió a `1`
+para que el nivel de combustible y el consumo respondan a la conducción.
+Backup del perfil: `config.cfg.bak-fuel-*` en el perfil de Steam.
+
+La app calcula además un consumo instantáneo propio con el nivel de combustible
+y la distancia recorrida en una ventana de 20 s; muestra `L/h` cuando el camión
+está parado o al ralentí.
+
 ## MoltenVK
 
 `mvk-env.sh` configura variables de rendimiento para el usuario:

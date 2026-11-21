@@ -2875,18 +2875,37 @@ struct CompactFuelPanelView: View {
     }
 
     private var consText: String {
-        guard snap.active, let cons = snap.cons, cons > 0, snap.speed ?? 0 > 0.5 else { return "--" }
-        let l100 = cons * 100.0
-        switch fuelUnit {
-        case 1:
-            let mpg = 235.214583 / l100
-            return String(format: "%.1f MPG", mpg)
-        case 2:
-            let gal = l100 * 0.264172
-            return String(format: "%.1f gal/100mi", gal)
-        default:
-            return String(format: "%.1f L/100", l100)
+        guard snap.active else { return "--" }
+
+        let moving = (snap.speed ?? 0) > 0.5
+        if moving {
+            let l100: Double
+            if let instant = snap.instantCons, instant > 0.1 {
+                l100 = Double(instant)
+            } else if let average = snap.cons, average > 0 {
+                l100 = Double(average) * 100.0
+            } else {
+                return "--"
+            }
+
+            switch fuelUnit {
+            case 1:
+                let mpg = 235.214583 / l100
+                return String(format: "%.1f MPG", mpg)
+            case 2:
+                let gal = l100 * 0.4251437
+                return String(format: "%.1f gal/100mi", gal)
+            default:
+                return String(format: "%.1f L/100", l100)
+            }
         }
+
+        // Parado o ralentí: L/h (o gal/h) en lugar de un L/100 sin sentido.
+        guard let rate = snap.instantFuelRate, rate > 0.1 else { return "--" }
+        if fuelUnit == 0 {
+            return String(format: "%.1f L/h", rate)
+        }
+        return String(format: "%.1f gal/h", Double(rate) * 0.264172)
     }
 
     var body: some View {
