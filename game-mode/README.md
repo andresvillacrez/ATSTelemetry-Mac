@@ -22,7 +22,8 @@ ni cambiar ajustes visuales de macOS.
 - `r_vulkan_runtime ""`: elimina la ruta corrupta; el juego usa su MoltenVK incluido.
 - Mantiene `t_limit_fps 60` y `t_locked_fps 60`.
 - **No cambia** sombras, SSAO, espejos, texturas, escalado ni ninguna opción de
-  calidad gráfica.
+  calidad gráfica. Para bajar también esos ajustes, usa el perfil de rendimiento
+  de la sección siguiente.
 
 El juego reescribe `config.cfg` al salir y puede devolver `r_vsync` a `1`. El
 watcher de modo juego **reaplica el perfil automáticamente** tras cerrar ATS/ETS2
@@ -30,24 +31,27 @@ watcher de modo juego **reaplica el perfil automáticamente** tras cerrar ATS/ET
 siguiente arranque. Así el perfil de suavidad queda persistente sin tener que
 ejecutar el script a mano.
 
-## Mejoras opcionales de rendimiento (calidad)
+## Mejoras de rendimiento (calidad)
 
-El modo juego no toca la calidad. Si hiciera falta más margen en GPU, estos son
-los ajustes con mejor relación coste/impacto, **aplicables manualmente** en
-Opciones → Gráficos:
+`apply-ats-performance.sh` aplica el perfil de suavidad y además baja los
+ajustes de calidad con mayor coste. Guarda una copia en
+`config.cfg.bak-perf-<fecha>` antes de tocar nada. Valores aplicados en esta
+máquina:
 
-| Ajuste | Actual | Alternativa | Efecto |
+| Ajuste | Antes | Ahora | Efecto |
 |---|---|---|---|
-| `r_ssao` | 2 | 1 o 0 | Ahorra GPU; pierde oclusión ambiental |
-| `r_sun_shadow_quality` | 2 | 1 | Sombras más baratas |
-| `r_sun_shadow_texture_size` | 2048 | 1024 | Menos memoria y filtrado |
-| `r_mirror_view_distance` | 120 | 90 | Menos geometría en espejos (CPU + GPU) |
-| `r_deferred_mirrors` | 1 | 0 | Espejos sin iluminación diferida |
-| `r_aa` | 6 | 5 | Menos coste de antialiasing |
+| `r_mirror_view_distance` | 120 | **90** | Menos geometría en espejos (CPU + GPU) |
+| `r_sun_shadow_quality` | 2 | **1** | Sombras más baratas |
+| `r_sun_shadow_texture_size` | 2048 | **1024** | Menos memoria y filtrado |
+| `r_ssao` | 2 | **1** | Menos coste de oclusión ambiental |
+| `r_aa` | 6 | **5** | Menos coste de antialiasing |
 
 En este equipo el límite suele estar en CPU (i7-9700F, 8 hilos), así que las
 mejoras de mayor impacto real son **distancia de espejos**, **sombras** y
 **SSAO**; el resto afecta sobre todo a GPU.
+
+Para volver a la calidad original: `restore-ats-config.sh` (o restaurar el
+`config.cfg.bak-perf-*` correspondiente).
 
 ## Prioridad de la app de telemetría
 
@@ -100,6 +104,7 @@ Log: `~/Library/Logs/ATS Telemetry/game-mode.log`.
 ```bash
 bash game-mode/install-game-mode.sh
 bash game-mode/apply-ats-smooth.sh
+bash game-mode/apply-ats-performance.sh   # suavidad + calidad orientada a rendimiento
 ```
 
 Revertir:
