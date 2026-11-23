@@ -7,7 +7,7 @@ cd "$ROOT"
 # Xcode tiene la licencia pendiente en este Mac; el toolchain de CLT compila igual.
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 
-VERSION="2.7.0"
+VERSION="2.7.1"
 APP="$ROOT/ATS Telemetry.app"
 PLUGIN="$ROOT/Resources/Plugins/libscs-telemetry.dylib"
 PKG="$ROOT/ATS-Telemetry-Installer-$VERSION.pkg"
@@ -60,7 +60,7 @@ cat > "$ROOT/LEEME-INSTALADOR.txt" <<'TXT'
 ATS Telemetry — Instalador macOS
 =================================
 
-Doble clic en ATS-Telemetry-Installer-2.7.0.pkg para instalar.
+Doble clic en ATS-Telemetry-Installer-2.7.1.pkg para instalar.
 
 El instalador:
   1. Copia ATS Telemetry.app a /Applications.

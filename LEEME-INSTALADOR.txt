@@ -1,7 +1,7 @@
 ATS Telemetry — Instalador macOS
 =================================
 
-Doble clic en ATS-Telemetry-Installer-2.7.0.pkg para instalar.
+Doble clic en ATS-Telemetry-Installer-2.7.1.pkg para instalar.
 
 El instalador:
   1. Copia ATS Telemetry.app a /Applications.
