@@ -404,6 +404,11 @@ final class TelemetryReader {
     private let demoMode: Bool
     private let demoStart = Date.timeIntervalSinceReferenceDate
     private var lastOpenAttempt: TimeInterval = 0
+    // Varias vistas piden el snapshot dentro del mismo frame; se reutiliza para
+    // evitar releer clima, savegame y memoria compartida tres veces por tick.
+    private var cachedSnap: Snap?
+    private var cachedSnapTime: TimeInterval = 0
+    private let snapshotTTL: TimeInterval = 0.02
 
     // Consumo instantáneo calculado con el nivel de combustible y la distancia
     // recorrida. El SDK solo expone el promedio histórico.
@@ -420,11 +425,21 @@ final class TelemetryReader {
     }
 
     func snapshot() -> Snap {
+        let now = Date.timeIntervalSinceReferenceDate
+        if let cachedSnap, now - cachedSnapTime < snapshotTTL {
+            return cachedSnap
+        }
+        let snap = computeSnapshot(now: now)
+        cachedSnap = snap
+        cachedSnapTime = now
+        return snap
+    }
+
+    private func computeSnapshot(now: TimeInterval) -> Snap {
         if demoMode {
             return demoSnapshot()
         }
 
-        let now = Date.timeIntervalSinceReferenceDate
         if shm.base == nil, now - lastOpenAttempt >= 1.0 {
             lastOpenAttempt = now
             _ = shm.tryOpen(checkSDK: true)

@@ -17,9 +17,28 @@ enum ATSColor {
 // MARK: - Truck image loader (FH6)
 enum TruckImageLoader {
     private static var cache: [String: NSImage] = [:]
+    /// Resolución por combinación de camión. Cadena vacía = "sin imagen" (fallo cacheado).
+    private static var resolved: [String: String] = [:]
+    /// Nombres de archivo del bundle, leídos una sola vez.
+    private static var bundleIndex: (names: Set<String>, sorted: [String])? = nil
+
+    private static func availableNames() -> (names: Set<String>, sorted: [String]) {
+        if let bundleIndex { return bundleIndex }
+        let urls = Bundle.main.urls(forResourcesWithExtension: "jpg", subdirectory: "TruckImages")
+            ?? Bundle.main.urls(forResourcesWithExtension: "jpg", subdirectory: nil)
+            ?? []
+        let names = urls.map { $0.deletingPathExtension().lastPathComponent.lowercased() }
+        let index = (names: Set(names), sorted: names.sorted())
+        bundleIndex = index
+        return index
+    }
 
     static func name(for snap: Snap) -> String? {
         guard snap.active else { return nil }
+        let key = "\(snap.truckId ?? "")|\(snap.truckBrand ?? "")|\(snap.truckName ?? "")"
+        if let cached = resolved[key] { return cached.isEmpty ? nil : cached }
+
+        let index = availableNames()
         var candidates: [String] = []
         if let id = snap.truckId?.lowercased(), !id.isEmpty {
             var base = id
@@ -39,23 +58,20 @@ enum TruckImageLoader {
             let n = name.replacingOccurrences(of: " ", with: "_")
             candidates.append("\(b)_\(n)")
         }
-        for c in candidates {
-            if load(c) != nil { return c }
+        for c in candidates where index.names.contains(c.lowercased()) {
+            resolved[key] = c
+            return c
         }
-        if let brand = snap.truckBrand, let fallback = fallbackName(for: brand) {
-            return fallback
+        // Si el modelo exacto no existe (p. ej. T800), usa la primera imagen de la marca.
+        if let brand = snap.truckBrand, !brand.isEmpty {
+            let prefix = brand.lowercased().replacingOccurrences(of: " ", with: "_")
+            if let match = index.sorted.first(where: { $0.hasPrefix(prefix) }) {
+                resolved[key] = match
+                return match
+            }
         }
-        return candidates.first
-    }
-
-    // Si el modelo exacto no existe (p. ej. T800), usa la primera imagen de la marca.
-    private static func fallbackName(for brand: String) -> String? {
-        let key = brand.lowercased().replacingOccurrences(of: " ", with: "_")
-        guard let urls = Bundle.main.urls(forResourcesWithExtension: "jpg", subdirectory: "TruckImages") else { return nil }
-        let match = urls.first {
-            $0.deletingPathExtension().lastPathComponent.lowercased().hasPrefix(key)
-        }
-        return match?.deletingPathExtension().lastPathComponent
+        resolved[key] = ""
+        return nil
     }
 
     static func image(named name: String?) -> NSImage? {
@@ -80,16 +96,37 @@ enum TruckImageLoader {
 // MARK: - Cargo image loader (FH6)
 enum CargoImageLoader {
     private static var cache: [String: NSImage] = [:]
+    /// Nombre resuelto por carga. Cadena vacía = "sin imagen" (fallo cacheado).
+    private static var resolved: [String: String] = [:]
+    private static var index: Set<String>? = nil
+
+    private static func availableNames() -> Set<String> {
+        if let index { return index }
+        let urls = Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: "CargoImages")
+            ?? Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: nil)
+            ?? []
+        let names = Set(urls.map { $0.deletingPathExtension().lastPathComponent.lowercased() })
+        index = names
+        return names
+    }
 
     static func image(for snap: Snap) -> NSImage? {
         guard snap.active, snap.cargoLoaded else { return nil }
 
-        for name in candidates(for: snap) {
-            if let image = load(name) {
-                return image
-            }
+        let key = "\(snap.cargoId ?? "")|\(snap.cargoName ?? "")"
+        if let cached = resolved[key] {
+            return cached.isEmpty ? nil : load(cached)
         }
-        return load("fallback")
+
+        let names = availableNames()
+        var match = candidates(for: snap).first { names.contains($0.lowercased()) }
+        if match == nil, names.contains("fallback") { match = "fallback" }
+        if let match, let image = load(match) {
+            resolved[key] = match
+            return image
+        }
+        resolved[key] = ""
+        return nil
     }
 
     private static func candidates(for snap: Snap) -> [String] {
@@ -131,10 +168,12 @@ enum CargoImageLoader {
 // MARK: - Company logo loader (FH6)
 enum CompanyLogoLoader {
     private static var cache: [String: NSImage] = [:]
+    private static var missing: Set<String> = []
 
     static func image(named name: String?) -> NSImage? {
         guard let name, !name.isEmpty else { return nil }
         if let c = cache[name] { return c }
+        if missing.contains(name) { return nil }
         let base = name.replacingOccurrences(of: ".png", with: "")
 
         var loaded: NSImage? = nil
@@ -144,7 +183,10 @@ enum CompanyLogoLoader {
         if loaded == nil, let url = Bundle.main.url(forResource: base, withExtension: "png") {
             loaded = NSImage(contentsOf: url)
         }
-        guard let loaded else { return nil }
+        guard let loaded else {
+            missing.insert(name)
+            return nil
+        }
 
         let processed = strippingWhiteBackground(loaded) ?? loaded
         cache[name] = processed
@@ -227,19 +269,44 @@ private func companyLogoImage(named name: String?) -> NSImage? {
 // MARK: - Brand logo loader (FH6)
 enum BrandLogoLoader {
     private static var cache: [String: NSImage] = [:]
+    private static var resolved: [String: String] = [:]
+    private static var index: Set<String>? = nil
+
+    private static func availableNames() -> Set<String> {
+        if let index { return index }
+        let urls = Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: "BrandLogos")
+            ?? Bundle.main.urls(forResourcesWithExtension: "png", subdirectory: nil)
+            ?? []
+        let names = Set(urls.map { $0.deletingPathExtension().lastPathComponent.lowercased() })
+        index = names
+        return names
+    }
+
     static func image(brand: String?) -> NSImage? {
         guard let brand, !brand.isEmpty else { return nil }
         let key = brand.lowercased().replacingOccurrences(of: " ", with: "")
         if let c = cache[key] { return c }
+        if let cached = resolved[key] { return cached.isEmpty ? nil : load(cached) }
+
         // try a few candidate filenames
         let candidates = [brand.lowercased(), brand.lowercased().replacingOccurrences(of: " ", with: ""),
                           key, brand.lowercased().replacingOccurrences(of: " ", with: "_")]
-        for c in candidates {
-            if let url = Bundle.main.url(forResource: c, withExtension: "png", subdirectory: "BrandLogos"),
-               let img = NSImage(contentsOf: url) { cache[key] = img; return img }
-            if let url = Bundle.main.url(forResource: c, withExtension: "png"),
-               let img = NSImage(contentsOf: url) { cache[key] = img; return img }
+        let names = availableNames()
+        if let match = candidates.first(where: { names.contains($0.lowercased()) }),
+           let img = load(match) {
+            cache[key] = img
+            resolved[key] = match
+            return img
         }
+        resolved[key] = ""
+        return nil
+    }
+
+    private static func load(_ name: String) -> NSImage? {
+        if let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "BrandLogos"),
+           let img = NSImage(contentsOf: url) { return img }
+        if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+           let img = NSImage(contentsOf: url) { return img }
         return nil
     }
 }
@@ -332,16 +399,20 @@ final class GameMessageStore: ObservableObject {
             messageStarted = now
         }
         // opacity
+        let newOpacity: Double
         if let started = messageStarted, currentMessage != nil {
             let elapsed = now.timeIntervalSince(started)
             if elapsed <= Self.holdSeconds {
-                opacity = 1
+                newOpacity = 1
             } else {
-                opacity = max(0, 1 - (elapsed - Self.holdSeconds) / Self.fadeSeconds)
+                newOpacity = max(0, 1 - (elapsed - Self.holdSeconds) / Self.fadeSeconds)
             }
         } else {
-            opacity = 0
+            newOpacity = 0
         }
+        // Combine publica en cada asignación: escribir solo cuando cambia evita
+        // invalidar la vista 30 veces por segundo con el aviso oculto.
+        if newOpacity != opacity { opacity = newOpacity }
     }
 
     private func push(_ text: String, type: AdvisoryType = .info) {
@@ -649,25 +720,41 @@ struct PanelHeader: View {
     var iconColor: Color = Theme.accent
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: FS(14), weight: .semibold))
+                .font(.system(size: FS(13), weight: .semibold))
                 .foregroundColor(iconColor)
-                .frame(width: 18)
+                .frame(width: 20, height: 20)
+                .background(
+                    // La baldosa se expande con padding negativo: ancla el
+                    // icono sin alterar la altura de la cabecera.
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(iconColor.opacity(0.12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .stroke(iconColor.opacity(0.28), lineWidth: 1)
+                        )
+                        .padding(-4)
+                )
 
             Text(title)
-                .font(.system(size: FS(13), weight: .bold, design: .default))
-                .tracking(2.4)
-                .foregroundColor(Theme.textSecondary)
+                .font(.system(size: FS(15), weight: .black, design: .rounded))
+                .tracking(1.6)
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(1)
 
             Spacer(minLength: 6)
 
             if let status, !status.isEmpty {
                 Text(status)
-                    .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                    .tracking(1.4)
+                    .font(.system(size: FS(9), weight: .bold, design: .monospaced))
+                    .tracking(1.0)
                     .foregroundColor(statusColor)
                     .lineLimit(1)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(statusColor.opacity(0.10)))
+                    .overlay(Capsule().stroke(statusColor.opacity(0.22), lineWidth: 1))
             }
         }
     }
@@ -761,6 +848,45 @@ struct FleetStatView: View {
     }
 }
 
+struct GpsStatView: View {
+    let icon: String
+    let value: String
+    let label: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: FS(15), weight: .semibold))
+                .foregroundColor(Theme.textSecondary)
+                .frame(height: 17)
+
+            Text(value)
+                .font(.system(size: FS(24), weight: .bold, design: .default))
+                .monospacedDigit()
+                .foregroundColor(Theme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+
+            Text(label)
+                .font(.system(size: FS(9), weight: .bold, design: .default))
+                .tracking(0.7)
+                .foregroundColor(Theme.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.white.opacity(0.045))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Theme.stroke, lineWidth: 1)
+                )
+        )
+    }
+}
+
 struct HeaderIconButton: View {
     let symbol: String
     let help: String
@@ -818,6 +944,51 @@ final class AnimatedValue {
     }
     func snap(_ target: Double) { value = target; velocity = 0 }
     var current: Double { value }
+}
+
+/// Reloj de animación único para todo el panel. Crear un `Timer.publish` dentro
+/// del body recreaba la suscripción en cada frame; uno estático y compartido
+/// mantiene una sola fuente de 60 Hz.
+enum AnimationClock {
+    static let tick = Timer
+        .publish(every: 1.0 / 60.0, on: .main, in: .common)
+        .autoconnect()
+}
+
+/// Reloj de frame sin observación. Guardar el instante anterior en `@State`
+/// invalidaba la vista en cada tick aunque la aguja ya estuviera quieta.
+final class FrameClock {
+    private var last = Date()
+
+    func reset() { last = Date() }
+
+    func dt() -> Double {
+        let now = Date()
+        let delta = min(0.05, max(0, now.timeIntervalSince(last)))
+        last = now
+        return delta
+    }
+}
+
+// MARK: - Motion preference (cached)
+/// Consultar `NSWorkspace` en cada tick de animación cuesta caro (XPC); se
+/// cachea y se refresca solo cuando cambia la preferencia del sistema.
+enum MotionPreference {
+    private static var cached = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    private static var token: NSObjectProtocol?
+
+    static var reduceMotion: Bool {
+        if token == nil {
+            token = NotificationCenter.default.addObserver(
+                forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { _ in
+                cached = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            }
+        }
+        return cached
+    }
 }
 
 // MARK: - Onboarding (v3)
@@ -912,12 +1083,41 @@ struct EmptyStateView: View {
 }
 
 // MARK: - Root view
+/// Métricas de render sin observación: escribirlas no invalida la vista.
+final class FrameStats {
+    private var count = 0
+    private var windowStart = Date()
+    private(set) var fps: Double = 0
+    private(set) var frameMs: Double = 0
+
+    func record(_ date: Date) {
+        count += 1
+        let elapsed = date.timeIntervalSince(windowStart)
+        guard elapsed >= 0.5 else { return }
+        fps = Double(count) / elapsed
+        frameMs = elapsed * 1000 / Double(max(count, 1))
+        count = 0
+        windowStart = date
+    }
+}
+
 struct DashboardView: View {
     let reader: TelemetryReader
     @StateObject private var messages = GameMessageStore()
+    @State private var stats = FrameStats()
     @State private var diagFPS: Double = 0
     @State private var diagFrameMs: Double = 0
-    @State private var lastDiagFrame: Date = Date()
+    @State private var lastConnected: Bool? = nil
+
+    // Los avisos necesitan ~10 Hz para el fundido; los efectos secundarios no
+    // deben ejecutarse en cada frame del render.
+    private static let sideEffects = Timer
+        .publish(every: 0.1, on: .main, in: .common)
+        .autoconnect()
+
+    private var showDiagnostics: Bool {
+        UserDefaults.standard.bool(forKey: "ATS.showDiagnostics")
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -931,24 +1131,29 @@ struct DashboardView: View {
                 Color.black
 
                 ZStack {
-                    TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { context in
+                    TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { context in
                         let snap = reader.snapshot()
-                        let _ = DispatchQueue.main.async {
-                            let now = context.date
-                            let dt = now.timeIntervalSince(lastDiagFrame)
-                            if dt > 0 { diagFPS = 1.0 / dt }
-                            diagFrameMs = dt * 1000
-                            lastDiagFrame = now
-                            messages.update(snap: snap, now: context.date)
-                            UserDefaults.standard.set(snap.active || snap.demo, forKey: "ATS.gameConnected")
-                        }
+                        let _ = stats.record(context.date)
                         DashboardContent(snap: snap, messages: messages, layout: layout)
                     }
                 }
                 .frame(width: layout.canvasWidth, height: layout.canvasHeight)
                 .scaleEffect(scale)
+                .onReceive(Self.sideEffects) { _ in
+                    let snap = reader.snapshot()
+                    messages.update(snap: snap, now: Date())
+                    if showDiagnostics {
+                        diagFPS = stats.fps
+                        diagFrameMs = stats.frameMs
+                    }
+                    let connected = snap.active || snap.demo
+                    if connected != lastConnected {
+                        lastConnected = connected
+                        UserDefaults.standard.set(connected, forKey: "ATS.gameConnected")
+                    }
+                }
 
-                if UserDefaults.standard.bool(forKey: "ATS.showDiagnostics") {
+                if showDiagnostics {
                     VStack {
                         HStack {
                             Spacer()
@@ -962,6 +1167,9 @@ struct DashboardView: View {
                         }
                         Spacer()
                     }
+                    // El overlay vive en coordenadas de ventana, no del lienzo
+                    // escalado: sin este frame queda recortado fuera de vista.
+                    .frame(width: geo.size.width, height: geo.size.height)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -978,11 +1186,18 @@ struct DashboardView: View {
 
 struct DashboardContent: View {
     let snap: Snap
-    @ObservedObject var messages: GameMessageStore
+    // Referencia sin observación: los cambios del store solo deben invalidar la
+    // tarjeta de avisos, no los 30 paneles del dashboard.
+    let messages: GameMessageStore
     var layout: LayoutMode = .full
 
     var body: some View {
         ZStack {
+            // Halo de cristal detrás del cluster, como el fondo del FH6.
+            ClusterHalo()
+                .frame(width: 680, height: 680)
+                .position(x: 960, y: 548)
+
             // Cabecera
             HeaderView(snap: snap, layout: layout)
                 .frame(width: 1920, height: 60)
@@ -995,15 +1210,15 @@ struct DashboardContent: View {
 
             // Cluster central
             SpeedometerView(snap: snap)
-                .frame(width: 600, height: 600)
+                .frame(width: 680, height: 680)
                 .position(x: 960, y: 548)
 
             // Marcha + RPM en fila propia, debajo del dial
             GearBoxView(snap: snap)
-                .position(x: 865, y: 690)
+                .position(x: 822, y: 746)
 
-            RpmBarView(snap: snap, width: 240)
-                .position(x: 1045, y: 690)
+            RpmBarView(snap: snap, width: 260)
+                .position(x: 1000, y: 746)
 
             if layout.showVerticalGauges {
                 VerticalGaugeView(snap: snap, kind: .water)
@@ -1074,7 +1289,7 @@ struct VerticalGaugeView: View {
     @State private var prevEngine: Bool = false
     @State private var smoothedFraction: Double = 0
     @State private var animatedGauge = AnimatedValue()
-    @State private var lastFrame: Date = Date()
+    @State private var clock = FrameClock()
     private func smoothStep(_ t: Double) -> Double {
         let c = min(1, max(0, t)); return c*c*(3-2*c)
     }
@@ -1195,19 +1410,18 @@ struct VerticalGaugeView: View {
             prevEngine = snap.engine
             smoothedFraction = realFraction
             animatedGauge.snap(realFraction)
-            lastFrame = Date()
+            clock.reset()
         }
-        .onReceive(Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()) { _ in
-            let now = Date()
-            let dt = min(0.05, max(0, now.timeIntervalSince(lastFrame)))
-            lastFrame = now
+        .onReceive(AnimationClock.tick) { _ in
+            let dt = clock.dt()
             let target = snap.active ? realFraction : 0
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || UserDefaults.standard.bool(forKey: "ATS.reduceMotion") {
+            if MotionPreference.reduceMotion || UserDefaults.standard.bool(forKey: "ATS.reduceMotion") {
                 animatedGauge.snap(target)
             } else {
                 animatedGauge.update(target: target, dt: dt)
             }
-            smoothedFraction = animatedGauge.current
+            let next = animatedGauge.current
+            if next != smoothedFraction { smoothedFraction = next }
         }
     }
 }
@@ -1232,7 +1446,7 @@ struct AdvisoryCardView: View {
                     .minimumScaleFactor(0.75)
             } else {
                 Text(L10n.t("no.advisory"))
-                    .font(.system(size: FS(17), weight: .semibold, design: .default))
+                    .font(.system(size: FS(16), weight: .semibold, design: .default))
                     .foregroundColor(Theme.textDisabled)
             }
 
@@ -1407,7 +1621,7 @@ struct HeaderView: View {
                         .frame(height: 48)
                 } else {
                     Text(truckRef)
-                        .font(.system(size: FS(17), weight: .semibold, design: .default))
+                        .font(.system(size: FS(16), weight: .semibold, design: .default))
                         .tracking(2.4)
                         .foregroundColor(.white.opacity(0.82))
                         .lineLimit(1)
@@ -1422,9 +1636,10 @@ struct HeaderView: View {
 struct FooterView: View {
     let snap: Snap
 
-    private var version: String {
+    private static let appVersion: String =
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.7.0"
-    }
+
+    private var version: String { Self.appVersion }
 
     var body: some View {
         HStack {
@@ -1442,13 +1657,16 @@ struct FooterView: View {
 // MARK: - Indicator lights
 private enum IndicatorIcon {
     private static var cache: [String: NSImage] = [:]
+    private static var missing: Set<String> = []
 
     static func image(named name: String) -> NSImage? {
         if let cached = cache[name] { return cached }
+        if missing.contains(name) { return nil }
         // Los iconos estan en Contents/Resources/Indicators/ (y tambien en la raiz).
         let url = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "Indicators")
             ?? Bundle.main.url(forResource: name, withExtension: "png")
         guard let u = url, let image = NSImage(contentsOf: u) else {
+            missing.insert(name)
             return nil
         }
         cache[name] = image
@@ -1572,7 +1790,7 @@ private struct IndicatorPulse: ViewModifier {
     let pulses: Bool
 
     static func reduceMotion(active: Bool, pulses: Bool) -> Bool {
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return true }
+        if MotionPreference.reduceMotion { return true }
         if UserDefaults.standard.bool(forKey: "ATS.reduceMotion") { return true }
         return !(active && pulses)
     }
@@ -1596,6 +1814,8 @@ struct CheckEngineCell: View {
     let active: Bool
     let engineOn: Bool
 
+    private var tint: Color { ATSColor.yellow }
+
     var body: some View {
         Group {
             if engineOn {
@@ -1607,23 +1827,34 @@ struct CheckEngineCell: View {
                             .interpolation(.high)
                             .scaledToFit()
                             .frame(width: 26, height: 26)
-                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.70))
+                            .foregroundColor(active ? tint : Color.white.opacity(0.70))
                     } else {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: FS(20), weight: .bold))
-                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.25))
+                            .foregroundColor(active ? tint : Color.white.opacity(0.25))
                             .frame(width: 26, height: 26)
                     }
 
                     VStack(alignment: .leading, spacing: -2) {
                         Text("CHECK")
                             .font(.system(size: FS(10), weight: .bold, design: .default))
-                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.70))
+                            .foregroundColor(active ? tint : Color.white.opacity(0.70))
                         Text(L10n.t("checkengine.engine"))
                             .font(.system(size: FS(10), weight: .bold, design: .default))
-                            .foregroundColor(active ? ATSColor.yellow : Color.white.opacity(0.70))
+                            .foregroundColor(active ? tint : Color.white.opacity(0.70))
                     }
                 }
+                .frame(width: 88, height: 40)
+                // Encuadre teñido: solo visible con el testigo activo.
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(active ? tint.opacity(0.16) : Color.clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(active ? tint.opacity(0.55) : Color.clear, lineWidth: 1.2)
+                )
+                .shadow(color: active ? tint.opacity(0.35) : .clear, radius: 6)
             }
         }
         .frame(width: 88, height: 40)
@@ -1834,6 +2065,105 @@ struct DamageRowView: View {
     }
 }
 
+// MARK: - Cluster halo (FH6 glass)
+/// Disco de cristal detrás del velocímetro, como en la app de Windows: luz
+/// blanca muy tenue que cae de arriba abajo, reflejo en la zona alta y un
+/// borde fino. Usa el mismo blanco de las superficies (3-7 %) para no
+/// competir con los paneles.
+struct ClusterHalo: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    LinearGradient(
+                        stops: [
+                            .init(color: Color.white.opacity(0.100), location: 0.00),
+                            .init(color: Color.white.opacity(0.058), location: 0.34),
+                            .init(color: Color.white.opacity(0.020), location: 0.70),
+                            .init(color: .clear, location: 1.00)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        gradient: Gradient(colors: [
+                            Color.white.opacity(0.055),
+                            Color.white.opacity(0.000)
+                        ]),
+                        center: UnitPoint(x: 0.5, y: 0.30),
+                        startRadius: 0,
+                        endRadius: 245
+                    )
+                )
+
+            Circle()
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+        }
+        // Recorte inferior: el halo se desvanece 56 px antes de las tarjetas
+        // (la misma separación que mantiene con los gauges laterales).
+        .mask(
+            LinearGradient(
+                stops: [
+                    .init(color: .white, location: 0.00),
+                    .init(color: .white, location: 0.62),
+                    .init(color: .clear, location: 0.78)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+}
+
+// MARK: - Odometer drum
+/// Cuenta kilómetros de tambor, como los vehículos antiguos: seis ventanas
+/// contiguas con degradado vertical y separadores finos, dentro de una carcasa.
+struct OdometerCounter: View {
+    let text: String
+
+    private var characters: [String] { text.map(String.init) }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(characters.enumerated()), id: \.offset) { index, ch in
+                ZStack {
+                    LinearGradient(
+                        stops: [
+                            .init(color: Color.white.opacity(0.16), location: 0.00),
+                            .init(color: Color.black.opacity(0.50), location: 0.45),
+                            .init(color: Color.black.opacity(0.20), location: 0.55),
+                            .init(color: Color.white.opacity(0.12), location: 1.00)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+
+                    Text(ch)
+                        .font(.system(size: FS(15), weight: .bold, design: .monospaced))
+                        .foregroundColor(Color.white.opacity(0.88))
+                }
+                .frame(width: FS(15) * 1.27, height: FS(15) * 1.87)
+
+                if index < characters.count - 1 {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.55))
+                        .frame(width: 1, height: FS(15) * 1.87)
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+    }
+}
+
 // MARK: - Speed arc (FH6 224°)
 struct SpeedArcView: View {
     let value: Double          // km/h
@@ -1851,6 +2181,14 @@ struct SpeedArcView: View {
             let size = min(geo.size.width, geo.size.height)
             let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
             let radius = size * 0.43
+            let fraction = min(1, max(0, value / maxValue))
+            let angle = (startDeg + fraction * sweepDeg) * .pi / 180
+            let tip = CGPoint(x: center.x + cos(angle) * radius * 0.945,
+                              y: center.y + sin(angle) * radius * 0.945)
+            let tail = CGPoint(x: center.x - cos(angle) * size * 0.021,
+                               y: center.y - sin(angle) * size * 0.021)
+            let hub = size * 0.030
+            let needleWidth = size * 0.0092
 
             ZStack {
                 // Background arc
@@ -1859,7 +2197,7 @@ struct SpeedArcView: View {
                     .frame(width: size, height: size)
 
                 // Filled arc
-                ArcShape(startDeg: startDeg, sweepDeg: sweepDeg * min(1, max(0, value / maxValue)))
+                ArcShape(startDeg: startDeg, sweepDeg: sweepDeg * fraction)
                     .stroke(accent, style: StrokeStyle(lineWidth: 12, lineCap: .round))
                     .frame(width: size, height: size)
                     .shadow(color: accent.opacity(0.35), radius: 6)
@@ -1881,41 +2219,54 @@ struct SpeedArcView: View {
                     .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
                 }
 
-                // Numeric labels at ticks
-                ForEach(0..<10, id: \.self) { i in
-                    let kmh = Double(i) * 20.0
-                    let frac = kmh / maxValue
-                    let deg = startDeg + frac * sweepDeg
-                    let rad = deg * .pi / 180
-                    let labelRadius = radius + 30
-                    Text("\(Int(kmh))")
-                        .font(.system(size: FS(10), weight: .semibold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.55))
-                        .position(x: center.x + cos(rad) * labelRadius,
-                                  y: center.y + sin(rad) * labelRadius)
+                // Aguja con halo + buje (referencia FH6)
+                Path { p in
+                    p.move(to: tail)
+                    p.addLine(to: tip)
                 }
+                .stroke(accent.opacity(0.16), style: StrokeStyle(lineWidth: size * 0.032, lineCap: .round))
 
-                // Center number + unit + odometer
-                VStack(spacing: 4) {
+                Path { p in
+                    p.move(to: tail)
+                    p.addLine(to: tip)
+                }
+                .stroke(accent, style: StrokeStyle(lineWidth: needleWidth, lineCap: .round))
+                .shadow(color: accent.opacity(0.45), radius: 5)
+
+                Circle()
+                    .fill(Theme.backgroundTop)
+                    .frame(width: hub * 2, height: hub * 2)
+                    .position(center)
+                Circle()
+                    .stroke(accent.opacity(0.85), lineWidth: size * 0.0046)
+                    .frame(width: hub * 2, height: hub * 2)
+                    .position(center)
+                Circle()
+                    .fill(accent.opacity(0.90))
+                    .frame(width: size * 0.0216, height: size * 0.0216)
+                    .position(center)
+
+                // Lectura digital con el unitario como superíndice, igual que
+                // el símbolo de grados: "80ᵏᵐ/ʰ".
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
                     Text(valueText)
-                        .font(.system(size: FS(184), weight: .light, design: .default))
+                        .font(.system(size: FS(96), weight: .light, design: .default))
                         .monospacedDigit()
                         .foregroundColor(accent)
 
                     Text(unitText)
-                        .font(.system(size: FS(14), weight: .medium, design: .default))
+                        .font(.system(size: FS(16), weight: .semibold, design: .default))
                         .foregroundColor(.white.opacity(0.55))
-
-                    Text(odometerText)
-                        .font(.system(size: FS(16), weight: .semibold, design: .monospaced))
-                        .tracking(0.6)
-                        .foregroundColor(.white.opacity(0.72))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(Theme.surfaceRaised))
-                        .overlay(Capsule().stroke(Theme.stroke, lineWidth: 1))
+                        .baselineOffset(FS(50))
                 }
-                .offset(y: -30)
+                // Compensa el ancho del superíndice para que la cifra quede
+                // centrada respecto al eje del dial.
+                .offset(x: FS(21))
+                .position(x: center.x, y: center.y + 78)
+
+                // El odómetro ocupa el hueco que dejó el unitario.
+                OdometerCounter(text: odometerText)
+                    .position(x: center.x, y: center.y + 146)
             }
         }
     }
@@ -2030,7 +2381,7 @@ struct SpeedometerView: View {
     @State private var ignitionStart: Date? = nil
     @State private var prevEngine: Bool = false
     @State private var animatedSpeedValue = AnimatedValue()
-    @State private var lastFrame: Date = Date()
+    @State private var clock = FrameClock()
     @State private var smoothedSpeed: Double = 0
 
     private let maxSpeed = 180.0
@@ -2067,20 +2418,10 @@ struct SpeedometerView: View {
         return String(Int(speedKmh.rounded()))
     }
 
-    private static let odometerFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.locale = Locale(identifier: "es_ES")
-        formatter.maximumFractionDigits = 0
-        formatter.usesGroupingSeparator = true
-        return formatter
-    }()
-
     private var odometerText: String {
-        guard snap.active, let odometer = snap.odometer, odometer >= 0 else { return "-- km" }
-        let value = Int(odometer.rounded())
-        let formatted = Self.odometerFormatter.string(from: NSNumber(value: value)) ?? "\(value)"
-        return "\(formatted) km"
+        guard snap.active, let odometer = snap.odometer, odometer >= 0 else { return "------" }
+        // Seis ventanas con ceros a la izquierda, como un odómetro de tambor.
+        return String(format: "%06d", Int(odometer.rounded()))
     }
 
     private var cruiseSetKmh: Double? {
@@ -2107,11 +2448,18 @@ struct SpeedometerView: View {
                 odometerText: odometerText
             )
 
-            GaugeBadge(active: cruiseSetKmh != nil, accent: ATSColor.green) {
-                CruiseBadgeContent(speedKmh: cruiseSetKmh)
+            if let setSpeed = cruiseSetKmh {
+                GaugeBadge(active: true, accent: ATSColor.green) {
+                    CruiseBadgeContent(speedKmh: setSpeed)
+                }
+                .offset(y: -195)
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.88, anchor: .center).combined(with: .opacity),
+                    removal: .scale(scale: 0.94, anchor: .center).combined(with: .opacity)
+                ))
             }
-            .offset(y: -195)
         }
+        .animation(.easeInOut(duration: 0.28), value: cruiseSetKmh != nil)
         .onChange(of: snap.engine) { _, newValue in
             if newValue && !prevEngine { ignitionStart = Date() }
             prevEngine = newValue
@@ -2122,19 +2470,18 @@ struct SpeedometerView: View {
             prevEngine = snap.engine
             smoothedSpeed = min(speedKmh, maxSpeed)
             animatedSpeedValue.snap(min(speedKmh, maxSpeed))
-            lastFrame = Date()
+            clock.reset()
         }
-        .onReceive(Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()) { _ in
-            let now = Date()
-            let dt = min(0.05, max(0, now.timeIntervalSince(lastFrame)))
-            lastFrame = now
+        .onReceive(AnimationClock.tick) { _ in
+            let dt = clock.dt()
             let target = min(speedKmh, maxSpeed)
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || UserDefaults.standard.bool(forKey: "ATS.reduceMotion") {
+            if MotionPreference.reduceMotion || UserDefaults.standard.bool(forKey: "ATS.reduceMotion") {
                 animatedSpeedValue.snap(target)
             } else {
                 animatedSpeedValue.update(target: target, dt: dt)
             }
-            smoothedSpeed = animatedSpeedValue.current
+            let next = animatedSpeedValue.current
+            if next != smoothedSpeed { smoothedSpeed = next }
         }
     }
 }
@@ -2269,8 +2616,12 @@ private struct GaugeBadge<Content: View>: View {
 
     var body: some View {
         ZStack {
+            // Fondo sólido: la aguja debe pasar por detrás del chip, no
+            // atravesar el texto cuando coincide con su ángulo.
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.white.opacity(active ? 0.050 : 0.025))
+                .fill(active
+                      ? Color(red: 0.030, green: 0.058, blue: 0.044)
+                      : Color(red: 0.042, green: 0.047, blue: 0.053))
 
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(
@@ -2798,7 +3149,7 @@ struct CompactFuelPanelView: View {
     @State private var prevEngine: Bool = false
     @State private var smoothedFraction: Double = 0
     @State private var animatedFuel = AnimatedValue()
-    @State private var lastFrame: Date = Date()
+    @State private var clock = FrameClock()
 
     private func smoothStep(_ t: Double) -> Double { let c=min(1,max(0,t)); return c*c*(3-2*c) }
 
@@ -2905,14 +3256,19 @@ struct CompactFuelPanelView: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .center, spacing: 16) {
             FuelBarView(fraction: animatedFraction, color: color)
-                .frame(width: 20, height: 92)
+                .frame(width: 20, height: 96)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // Contenido centrado con la etiqueta de autonomía bajo el valor.
+            VStack(alignment: .center, spacing: 2) {
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "fuelpump.fill")
+                        .font(.system(size: FS(19), weight: .semibold))
+                        .foregroundColor(color)
+
                     Text(percentText)
-                        .font(.system(size: FS(30), weight: .bold, design: .default))
+                        .font(.system(size: FS(38), weight: .bold, design: .default))
                         .monospacedDigit()
                         .foregroundColor(color)
                         .lineLimit(1)
@@ -2926,26 +3282,15 @@ struct CompactFuelPanelView: View {
                     }
                 }
 
-                Text(volumeText)
-                    .font(.system(size: FS(12), weight: .semibold, design: .default))
-                    .monospacedDigit()
-                    .foregroundColor(Theme.textSecondary)
+                Text(rangeText)
+                    .font(.system(size: FS(22), weight: .semibold, design: .monospaced))
+                    .foregroundColor(Theme.textPrimary)
                     .lineLimit(1)
 
-                HStack(spacing: 5) {
-                    Text(L10n.t("fuel.autonomy"))
-                        .font(.system(size: FS(10), weight: .bold, design: .default))
-                        .tracking(0.8)
-                        .foregroundColor(Theme.textTertiary)
-                    Text(rangeText)
-                        .font(.system(size: FS(15), weight: .semibold, design: .monospaced))
-                        .foregroundColor(Theme.textPrimary)
-                        .lineLimit(1)
-                }
-
-                Text("CONS. \(consText)")
-                    .font(.system(size: FS(10.5), weight: .semibold, design: .monospaced))
-                    .foregroundColor(Theme.textSecondary)
+                Text(L10n.t("fuel.autonomy"))
+                    .font(.system(size: FS(9), weight: .bold, design: .default))
+                    .tracking(1.2)
+                    .foregroundColor(Theme.textTertiary)
                     .lineLimit(1)
             }
         }
@@ -2969,19 +3314,18 @@ struct CompactFuelPanelView: View {
             prevEngine = snap.engine
             smoothedFraction = realFraction
             animatedFuel.snap(realFraction)
-            lastFrame = Date()
+            clock.reset()
         }
-        .onReceive(Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()) { _ in
-            let now = Date()
-            let dt = min(0.05, max(0, now.timeIntervalSince(lastFrame)))
-            lastFrame = now
+        .onReceive(AnimationClock.tick) { _ in
+            let dt = clock.dt()
             let target = snap.active ? realFraction : 0
-            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || UserDefaults.standard.bool(forKey: "ATS.reduceMotion") {
+            if MotionPreference.reduceMotion || UserDefaults.standard.bool(forKey: "ATS.reduceMotion") {
                 animatedFuel.snap(target)
             } else {
                 animatedFuel.update(target: target, dt: dt)
             }
-            smoothedFraction = animatedFuel.current
+            let next = animatedFuel.current
+            if next != smoothedFraction { smoothedFraction = next }
         }
     }
 }
@@ -3657,16 +4001,39 @@ struct GPSPanelView: View {
                     .offset(y: 3)
             }
 
+            Spacer(minLength: 0)
+
+            HStack(spacing: 10) {
+                GpsStatView(
+                    icon: "flag.fill",
+                    value: remainingText,
+                    label: L10n.t("gps.remaining")
+                )
+
+                GpsStatView(
+                    icon: "map.fill",
+                    value: travelledText,
+                    label: L10n.t("gps.travelled")
+                )
+
+                GpsStatView(
+                    icon: "clock.fill",
+                    value: arrivalText,
+                    label: L10n.t("gps.arrival")
+                )
+            }
+
             if let progress {
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack {
+                    HStack(alignment: .firstTextBaseline) {
                         Text("PROGRESO")
                             .font(.system(size: FS(10), weight: .bold, design: .default))
                             .tracking(1.6)
                             .foregroundColor(Theme.textTertiary)
                         Spacer()
                         Text(progressText)
-                            .font(.system(size: FS(11), weight: .bold, design: .monospaced))
+                            .font(.system(size: FS(19), weight: .bold, design: .monospaced))
+                            .monospacedDigit()
                             .foregroundColor(accent)
                     }
 
@@ -3681,36 +4048,6 @@ struct GPSPanelView: View {
                     }
                     .frame(height: 6)
                 }
-            }
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 0) {
-                MetricBlock(
-                    label: L10n.t("gps.remaining"),
-                    value: remainingText,
-                    color: Theme.textPrimary,
-                    valueSize: 18
-                )
-
-                Spacer(minLength: 12)
-
-                MetricBlock(
-                    label: L10n.t("gps.travelled"),
-                    value: travelledText,
-                    color: Theme.textSecondary,
-                    valueSize: 18
-                )
-
-                Spacer(minLength: 12)
-
-                MetricBlock(
-                    label: L10n.t("gps.arrival"),
-                    value: arrivalText,
-                    color: Theme.textSecondary,
-                    valueSize: 18,
-                    trailing: true
-                )
             }
         }
         .padding(20)
