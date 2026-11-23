@@ -5,82 +5,104 @@ Panel nativo de telemetría para **American Truck Simulator (ATS)** y
 **1920×1080**. Lee `/SCSTelemetry` en modo **solo lectura** y no modifica los
 plugins de Ajazz.
 
-> **Estado (20/11/2026):** app macOS **2.7.0** publicada con paridad visual
-> FH6, clima/hora/combustible en vivo, rediseño de interfaz e instalador PKG.
-> La sección [Estado actual (v2.7.0)](#estado-actual-v270--2026-11-20) describe
-> la versión publicada. El plan por fases queda en
-> [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md).
+> **Estado (23/11/2026):** app macOS **2.7.1** publicada. Corre a **60 FPS**
+> con ~30 % de un núcleo, con velocímetro rediseñado (aguja, halo de cristal
+> y odómetro de tambor), cabeceras nuevas y panel de combustible simplificado.
+> Instalador PKG 2.7.1 con checksum.
 
-![ATS Telemetry 2.7.0](screenshots/ats-telemetry-2.7.0.png)
+![ATS Telemetry 2.7.1](screenshots/ats-telemetry-2.7.1.png)
 
 ---
 
 ## Objetivo
 
-Llevar la app Mac a paridad con la **FH6 v2.7** de Windows conservando el host
-nativo SwiftUI/AppKit y la lectura pasiva de `/SCSTelemetry`:
+Mantener un panel nativo SwiftUI/AppKit con paridad visual respecto a la app
+FH6 de Windows, conservando la lectura pasiva de `/SCSTelemetry`:
 
 - Layout FH6 de 1920×1080: cabecera, 13 testigos, cluster central, paneles
   laterales, indicadores verticales de agua/aire y franja inferior.
 - **CHECK** oculto sin motor, blanco con motor y amarillo con avería.
-- **Chip de crucero** siempre visible: gris con `-- km/h` inactivo y verde con
-  la velocidad fijada activo.
-- **Combustible** encendido sin motor.
-- **45 imágenes** de camiones con fundido de 0,5 s al cambiar de modelo.
+- **Chip de crucero** visible solo con el crucero activo, con transición suave.
+- **45 imágenes** de camiones con fundido al cambiar de modelo.
 - **Telemetría pasiva**: solo lectura de `/SCSTelemetry`.
 - Empresa, logo y saldo desde el savegame/perfil.
 
-No se portan WinForms, Avalonia ni Wine en esta fase.
+No requiere .NET, Wine ni Avalonia.
 
 ---
 
-## Estado actual
+## Estado actual (2.7.1 — 23/11/2026)
 
 - Aplicación nativa **SwiftUI + AppKit**, `Package.swift` con macOS 14+.
-- Binario existente `x86_64`; app `0.1.0`.
+- Binario `x86_64`, versión **2.7.1**.
 - Lectura POSIX de `/SCSTelemetry` y descifrado del savegame ScsC/BSII.
-- Renderizado a **12 FPS** con el layout anterior a FH6.
-- 14 iconos en `Resources/Indicators`; sin fotos de camiones ni logos.
-- Git inicializado con el commit base `2183979 baseline macOS 0.1.0`; el
-  binario `.app`, `build/` y `dist/` están ignorados.
-- Fase 0 en curso: preparación completada; faltan build, captura Mac y prueba
-  del plugin en el Hackintosh.
-
-La app compilada actual sirve como **línea base** y red de seguridad. La
-migración se hará sin romperla hasta que la nueva vista FH6 esté validada.
+- Renderizado a **60 FPS** con un único reloj de animación.
+- Velocímetro de 680 px con aguja, buje, halo de cristal recortado y odómetro
+  mecánico de seis ventanas.
+- Instalador `.pkg` 2.7.1 con app + plugin de telemetría para ATS/ETS2.
 
 ---
 
-## Diferencias con Windows v2.7
+## Rendimiento
 
-| Área | macOS 0.1.0 | Objetivo FH6 v2.7 |
+Medido en modo demo, ventana de 1900×1030 en el PM1562, con delta de tiempo de
+CPU (`ps -o time`) sobre ventanas de 15-20 s:
+
+| Configuración | CPU (1 núcleo) | CPU por frame |
 |---|---|---|
-| Cabecera | Texto ATS + camión | Logo de marca + camión + cilindrada + estado + monitor |
-| Testigos | 12 iconos, fila antigua | 13 puestos con CHECK, retarder y freno de motor |
-| Cluster | Dos relojes separados | Arco de 224°, número 184 px, chip de crucero, marcha, RPM y odómetro |
-| Laterales | Finanzas 200×200, daños 400×280 | Empresa/carga a la izquierda; daños con imagen y GPS a la derecha |
-| Indicadores | Agua y aceite redondos | Agua y aire verticales de 88×440 |
-| Franja inferior | Combustible y clima 200×200 | Combustible 240×142, avisos 438×142, clima 237×142 |
-| Imagen del camión | No existe | 45 JPG, fundido de 0,5 s y fallback |
-| Empresa | Solo nombre en finanzas | Nombre, logo real y conductores desde `profile.sii` |
-| Encendido | Sin secuencia global | Chequeo de testigos 1,25 s y barrido de agujas/indicadores |
-| Avisos | No existe | Mensajes de entregas, multas, peajes, etc. |
-| Rendimiento | 12 FPS | 30/60 FPS |
-| Ventana | Solo PM1562, borderless | Selector de pantalla, modo ventana/F11 y preferencias |
+| Original 2.7.0 (30 FPS) | ~100 % | — |
+| Optimizada (30 FPS) | 23,3 % | 7,8 ms |
+| **Actual (60 FPS)** | **~28-31 %** | **4,7-5,1 ms** |
 
-La referencia exacta de coordenadas, colores y métodos está en
-[`Windows Native Final/GUIA-INTERFAZ.md`](../Windows%20Native%20Final/GUIA-INTERFAZ.md)
-y en la captura
-[`fh6-v27-1920.png`](../Windows%20Native%20Final/screenshots/fh6-v27-1920.png).
+El sobrecoste de pasar de 30 a 60 FPS es de solo ~6 puntos porque el trabajo
+caro era por segundo y no por frame.
+
+Optimizaciones aplicadas:
+
+- Índice en memoria de las imágenes del bundle, con caché de resolución y de
+  fallos (camiones, carga, logos e iconos). Antes se enumeraba el directorio de
+  recursos en cada frame desde el `body`.
+- `GameMessageStore` solo publica cuando el valor cambia y el contenedor del
+  dashboard ya no lo observa: los avisos no invalidan los 30 paneles.
+- Fuera el `DispatchQueue.main.async` por frame: los efectos secundarios van a
+  un timer de 10 Hz y las métricas a un objeto no observable (`FrameStats`).
+- Caché de snapshot con TTL de 20 ms para no releer clima, savegame y memoria
+  compartida varias veces por frame.
+- Un único `AnimationClock` de 60 Hz; `FrameClock` fuera de `@State` y
+  preferencia de movimiento reducido cacheada.
+
+El overlay de diagnóstico (menú de la barra → **Diagnóstico**) muestra FPS y
+tiempo de frame en vivo.
+
+---
+
+## Interfaz (2.7.1)
+
+- **Velocímetro**: arco de 224° con marcas sin numeración; aguja con halo y
+  buje; cifra de 96 pt bajo el pivote; `km/h` como superíndice; odómetro de
+  tambor (`004525`) sin la palabra «km»; marcha y RPM en una fila ancha.
+- **Halo de cristal** detrás del cluster, recortado en la parte inferior para
+  no tocar las tarjetas compactas (56 px de separación, igual que con los
+  gauges laterales).
+- **Cabeceras** de EMPRESA, CARGA, DAÑOS y GPS con baldosa de icono, título
+  redondeado en peso black y estado como chip.
+- **Combustible**: nivel en 38 pt, autonomía con la etiqueta debajo y sin la
+  línea de consumo; el tintado verde/naranja/rojo se conserva.
+- **Crucero**: el chip aparece solo al activarse, con transición de escala y
+  fundido de 0,28 s.
+- **CHECK ENGINE**: encuadre amarillo teñido y pulso solo con el testigo activo.
+- **GPS**: badges de FALTAN / RECORRIDO / LLEGADA, barra de progreso al pie y
+  porcentaje de 19 pt.
+- **Avisos** con fondo tintado por tipo, daños con etiqueta de severidad y
+  overlay de diagnóstico corregido.
 
 ---
 
 ## Requisitos
 
-- macOS 14 o superior (Hackintosh Intel; el binario actual es `x86_64`).
+- macOS 14 o superior (Hackintosh Intel; binario `x86_64`).
 - Xcode Command Line Tools / Swift 5.9 o superior.
 - ATS o ETS2 con el plugin de telemetría macOS instalado.
-- No requiere .NET, Wine ni Avalonia.
 
 ---
 
@@ -100,10 +122,32 @@ open "ATS Telemetry.app" --args --demo
 
 En modo demo se alternan la hora del juego y los estados de clima para validar
 los iconos de día y de noche. En modo real, el clima se infiere de los
-limpiabrisas o se fija desde el menú **Clima**.
+limpiabrisas.
 
-> `build_app.sh` copia actualmente solo `Resources/Indicators`. La Fase 5 del
-> plan amplía el script para copiar también logos y fotos de camiones.
+---
+
+## Instalador macOS
+
+```bash
+bash build_installer.sh
+```
+
+Genera `ATS-Telemetry-Installer-2.7.1.pkg`, que:
+
+- Copia `ATS Telemetry.app` a `/Applications`.
+- Instala `libscs-telemetry.dylib` en ATS y ETS2 si están instalados y aún no
+  tienen el plugin.
+- No sobrescribe un plugin existente.
+- Deja el registro en `/tmp/ATS-Telemetry-installer.log`.
+
+Checksum de la 2.7.1:
+
+```text
+9e47d0b767582a6984213af48c3b31d21bd4af161b634127be267de8243ee930  ATS-Telemetry-Installer-2.7.1.pkg
+```
+
+El paquete no está firmado con Developer ID; si macOS lo bloquea, usar clic
+derecho sobre el `.pkg` > **Abrir**.
 
 ---
 
@@ -128,119 +172,17 @@ panel debe recibir datos. Si no, revisar la ruta del plugin y que
 
 ---
 
-## Menú actual
+## Menú
 
-- **Clima**: Automático (lluvia por limpiabrisas), Despejado, Nublado, Lluvia o
-  Tormenta.
-- **Salir**: cierra la app.
+Desde el icono de la barra de menús:
 
-Se usa el icono de la app en la barra de menús. El selector de pantalla y el
-modo ventana/F11 están planificados para la Fase 5.
-
----
-
-## Funcionalidad actual (0.1.0)
-
-- Velocímetro analógico de 0 a 160 km/h, aguja, lectura digital, límite de
-  velocidad y odómetro total.
-- Tacómetro analógico con zona roja, RPM, marcha y check engine por desgaste.
-- Fila de 12 testigos con iconos del paquete de Ajazz.
-- Encuadre de viaje de 220×92 px.
-- Paneles de daños, carga y GPS de 400×280 px.
-- Indicadores redondos de agua y presión de aceite.
-- Panel financiero de 200×200 px y panel de combustible de 200×200 px.
-- Panel de clima y hora del juego.
-- Pie con estado de lectura y modo demo.
-- Saldo bancario desde `bank.money_account` del savegame más reciente.
-
-Los detalles de la versión 0.1.0 están en [`HISTORIAL.md`](HISTORIAL.md).
-
----
-
-## Estructura
-
-```text
-Mac Os/
-  Sources/ATSTelemetry/
-    main.swift              Ventana, pantalla y menú
-    DashboardView.swift     Panel actual (pre-FH6)
-    TelemetryReader.swift   Offsets REV12 y lectura de /SCSTelemetry
-    BankBalanceReader.swift Savegame, ScsC/BSII y saldo
-  Resources/Indicators/     Iconos de testigos
-  screenshots/              Referencias visuales de FH6 v2.7
-  ATS Telemetry.app         App compilada actual (x86_64)
-  build_app.sh              Compilación y empaquetado
-  Info.plist                Metadatos del bundle
-  PLAN-TRABAJO.md           Plan por fases
-  FASE-0.md                 Registro de la preparación y línea base
-  README.md                 Este documento
-  HISTORIAL.md              Historial de decisiones y pruebas
-```
-
-La estructura objetivo añade `Snap.swift`, `ProfileReader.swift`,
-`SiiParser.swift`, `TruckCatalog.swift`, `TelemetryStore.swift` y la carpeta
-`Fh6/` con el renderer. Está detallada en
-[`PLAN-TRABAJO.md`](PLAN-TRABAJO.md#5-arquitectura-objetivo).
-
----
-
-## Plan de trabajo (resumen)
-
-| Fase | Contenido | Estado |
-|---|---|---|
-| 0 | Baseline, git, plugin macOS, capturas | En curso |
-| 1 | Refactor, tema, layout, telemetry store | Pendiente |
-| 2 | Shell visual FH6 | Pendiente |
-| 3 | Assets y reglas v2.7 (CHECK, crucero, fundido) | Pendiente |
-| 4 | Empresa, logo, conductores y retarder | Pendiente |
-| 5 | Pantalla, ventana, rendimiento y empaquetado | Pendiente |
-| 6 | Release, documentación y tag `mac-v2.7.0` | Pendiente |
-
-El detalle, los criterios de aceptación, la matriz de pruebas y los riesgos
-están en [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md).
-
----
-
-## Pruebas
-
-La app Mac se compiló por última vez el 23/10/2026. **No se ha validado en vivo
-en este equipo Windows**; la Fase 0 debe confirmar en el Hackintosh:
-
-- Apertura de la app y colocación en la pantalla correcta.
-- Carga del plugin y lectura de `/SCSTelemetry`.
-- Saldo del savegame de ATS/ETS2.
-- Demo a 1920×1080 y 1280×720.
-
-La matriz completa de pruebas de la migración está en
-[`PLAN-TRABAJO.md`](PLAN-TRABAJO.md#7-matriz-de-pruebas).
-
----
-
-## Windows v2.7 como referencia
-
-El desarrollo activo de Windows vive en
-[`Windows Native Final`](../Windows%20Native%20Final/README.md). Allí están la
-interfaz FH6 v2.7, los 45 JPG de camiones, los logos y la guía de coordenadas.
-La app Mac **no** modifica ese proyecto; solo reutiliza sus assets y su
-especificación visual.
-
----
-
-## Ajustes de noche de ATS/ETS2
-
-Los ajustes de iluminación nocturna aplicados a los juegos están documentados
-en [`ajustes-noche/README.md`](ajustes-noche/README.md), con las líneas exactas
-de `config.cfg` y las copias de seguridad. No forman parte de la app; son notas
-para reproducir la configuración en el Hackintosh.
-
----
-
-## Historial
-
-El proceso de creación, las decisiones de diseño y el estado de las pruebas de
-la versión 0.1.0 están documentados en [`HISTORIAL.md`](HISTORIAL.md). La
-migración a FH6 v2.7 se registra en
-[`PLAN-TRABAJO.md`](PLAN-TRABAJO.md).
+- **Pantalla**: selección del monitor y «Pantalla siguiente».
+- **Clic a través**: la ventana ignora el ratón.
+- **Diagnóstico**: overlay de FPS y tiempo de frame.
+- **Tema claro**, **Alto contraste** y **Escala UI** (100/125/150 %).
+- **Idioma**: español / inglés.
+- **Ventana**: maximizar, minimizar, siempre visible, mover con ratón.
+- **Ajustes…**, **Créditos**, **Salir**.
 
 ---
 
@@ -254,64 +196,57 @@ migración a FH6 v2.7 se registra en
   entitlement de depuración para `task_for_pid`; el juego ya trae
   `get-task-allow`.
 - **ETS2:** al no haber una build instalada para verificar su offset Mac, el
-  panel usa el respaldo en vivo de los limpiabrisas. Cuando se instale ETS2 se
-  puede calcular su offset equivalente.
+  panel usa el respaldo en vivo de los limpiabrisas.
 
-## Instalador macOS
+---
 
-Para generar el instalador:
+## Estructura
 
-```bash
-bash build_installer.sh
+```text
+Mac Os/
+  Sources/ATSTelemetry/
+    main.swift              Ventana, pantalla y menú
+    DashboardView.swift     Dashboard completo (cluster, paneles y avisos)
+    TelemetryReader.swift   Offsets REV12, lectura de /SCSTelemetry y caché
+    BankBalanceReader.swift Savegame, ScsC/BSII, saldo y perfil
+    WeatherReader.swift     Clima en vivo desde la memoria del juego
+  Resources/
+    Indicators/             Iconos de los 13 testigos
+    TruckImages/            45 JPG de camiones
+    BrandLogos/ CompanyLogos/ CargoImages/
+    Plugins/                libscs-telemetry.dylib
+  screenshots/              Capturas de referencia y de la versión actual
+  installer/                Scripts preinstall/postinstall del PKG
+  game-mode/                Perfil de suavidad y prioridades para ATS/ETS2
+  ajustes-noche/            Notas de iluminación nocturna de los juegos
+  build_app.sh              Compilación y empaquetado de la app
+  build_installer.sh        Generación del instalador PKG
+  Info.plist                Metadatos del bundle (2.7.1)
+  README.md                 Este documento
+  PLAN-TRABAJO.md           Plan histórico por fases
+  MEJORAS-INTERFAZ.md       Registro de mejoras visuales
+  HISTORIAL.md              Historial de decisiones y pruebas
 ```
 
-Genera `ATS-Telemetry-Installer-2.7.0.pkg`, que:
+---
 
-- Copia `ATS Telemetry.app` a `/Applications`.
-- Instala `libscs-telemetry.dylib` en ATS y ETS2 si están instalados y aún no
-  tienen el plugin.
-- No sobrescribe un plugin existente.
-- Deja el registro en `/tmp/ATS-Telemetry-installer.log`.
+## Pruebas
 
-El paquete no está firmado con Developer ID; si macOS lo bloquea, usar
-clic derecho sobre el `.pkg` > **Abrir**.
+- **Demo**: validada a 1900×1030 y 1280×720; 60 FPS sostenidos y ~28-31 % de
+  un núcleo.
+- **Interfaz**: verificada con capturas en cada iteración (velocímetro, halo,
+  odómetro, cabeceras, combustible y crucero).
+- **Modo real**: pendiente de una sesión con ATS/ETS2 abierto para confirmar
+  lectura de `/SCSTelemetry`, saldo y clima en vivo.
 
-## Estado actual (v2.7.0 — 2026-11-20)
+---
 
-La app macOS ha sido actualizada a paridad visual con Windows FH6 v3.2.0:
+## Documentación relacionada
 
-- Velocímetro 180 km/h con numeración.
-- Testigos 40 px, inactivos al 20 %.
-- Bordes removidos de paneles y gauges.
-- CHECK ENGINE con pulso.
-- Pulso sin ampliación (solo opacidad).
-- Panel GPS simplificado.
-- Combustible centrado + consumo L/100/MPG/gal + marcador de reserva.
-- Panel ESTADO DE CARGA sin TIPO.
-- Imagen del camión ampliada (360×180).
-- Líneas horizontales removidas de gauges/paneles.
-- Minipanel de distancia en panel de GPS.
-- Testigo de crucero subido.
-- Números del kilometraje redistribuidos.
-- Clima eliminado del menú (modo automático).
-- Ajustes por delante del panel principal.
-- Tema claro/alto contraste en caliente.
-- Título de ventana según tema.
-- Submenús con texto claro.
-- Marcos de panel cacheados (drawingGroup).
-- Daños sin fondo + etiqueta de severidad (daltonismo).
-- Avisos con fondo tintado por tipo.
-- Overlay de diagnóstico (FPS + frame time).
-- Botones Ajustes/Créditos solo en Full.
-- Diálogo de Créditos ampliado.
-- Reflow para 150 %.
-- Unidades métrico/imperial (toggle).
-- Contraste elevado.
-- Clima en cabecera en modo Compact.
-
-### Compilar
-```zsh
-chmod +x build_app.sh
-./build_app.sh
-open "ATS Telemetry.app" --args --demo
-```
+- [`PLAN-TRABAJO.md`](PLAN-TRABAJO.md): plan por fases de la migración.
+- [`MEJORAS-INTERFAZ.md`](MEJORAS-INTERFAZ.md): cambios visuales aplicados.
+- [`HISTORIAL.md`](HISTORIAL.md): decisiones y estado de la versión 0.1.0.
+- [`ajustes-noche/README.md`](ajustes-noche/README.md): iluminación nocturna
+  de ATS/ETS2.
+- [`../Windows Native Final/README.md`](../Windows%20Native%20Final/README.md):
+  app de referencia en Windows.
