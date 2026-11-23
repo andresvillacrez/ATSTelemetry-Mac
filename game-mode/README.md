@@ -24,6 +24,38 @@ ni cambiar ajustes visuales de macOS.
 - **No cambia** sombras, SSAO, espejos, texturas, escalado ni ninguna opción de
   calidad gráfica.
 
+El juego reescribe `config.cfg` al salir y puede devolver `r_vsync` a `1`. El
+watcher de modo juego **reaplica el perfil automáticamente** tras cerrar ATS/ETS2
+(espera 3 s a que el juego vuelque el archivo) y también al detectar el
+siguiente arranque. Así el perfil de suavidad queda persistente sin tener que
+ejecutar el script a mano.
+
+## Mejoras opcionales de rendimiento (calidad)
+
+El modo juego no toca la calidad. Si hiciera falta más margen en GPU, estos son
+los ajustes con mejor relación coste/impacto, **aplicables manualmente** en
+Opciones → Gráficos:
+
+| Ajuste | Actual | Alternativa | Efecto |
+|---|---|---|---|
+| `r_ssao` | 2 | 1 o 0 | Ahorra GPU; pierde oclusión ambiental |
+| `r_sun_shadow_quality` | 2 | 1 | Sombras más baratas |
+| `r_sun_shadow_texture_size` | 2048 | 1024 | Menos memoria y filtrado |
+| `r_mirror_view_distance` | 120 | 90 | Menos geometría en espejos (CPU + GPU) |
+| `r_deferred_mirrors` | 1 | 0 | Espejos sin iluminación diferida |
+| `r_aa` | 6 | 5 | Menos coste de antialiasing |
+
+En este equipo el límite suele estar en CPU (i7-9700F, 8 hilos), así que las
+mejoras de mayor impacto real son **distancia de espejos**, **sombras** y
+**SSAO**; el resto afecta sobre todo a GPU.
+
+## Prioridad de la app de telemetría
+
+La app corre a 60 FPS y consume ~0,3 núcleos. Si quieres que el juego tenga aún
+más CPU, añade `ATSTelemetry` a `LOWER_PRIORITY_APPS` en `config.sh`: la app
+seguirá funcionando, pero puede perder algún frame en momentos de carga. No se
+añade por defecto para no degradar el panel.
+
 ## Consumo de combustible
 
 El perfil tenía `g_fuel_simulation 0` (consumo no realista). Se cambió a `1`

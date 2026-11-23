@@ -33,12 +33,30 @@ game_pids() {
     /usr/bin/pgrep -x eurotrucks2 2>/dev/null || true
 }
 
+# El juego reescribe config.cfg al salir y puede devolver VSync a 1. Deja el
+# perfil de suavidad listo para el siguiente arranque sin tocar la calidad.
+apply_smooth_config() {
+    local cfg
+    for cfg in \
+        "$HOME/Library/Application Support/American Truck Simulator/config.cfg" \
+        "$HOME/Library/Application Support/Euro Truck Simulator 2/config.cfg"; do
+        [ -f "$cfg" ] || continue
+        /usr/bin/sed -i '' 's/^uset r_vsync ".*"/uset r_vsync "0"/' "$cfg"
+        /usr/bin/sed -i '' 's|^uset r_vulkan_runtime ".*"|uset r_vulkan_runtime ""|' "$cfg"
+        /usr/bin/sed -i '' 's/^uset t_limit_fps ".*"/uset t_limit_fps "60"/' "$cfg"
+        /usr/bin/sed -i '' 's/^uset t_locked_fps ".*"/uset t_locked_fps "60"/' "$cfg"
+    done
+}
+
 start_game_mode() {
     /usr/bin/touch "$ACTIVE"
     : > "$BG_FILE"
     : > "$PAUSED_FILE"
     /bin/echo "0" > "$TM_FILE"
     log "JUEGO detectado: activando modo juego."
+
+    # Corrige el perfil si el juego lo revirtió en la sesión anterior.
+    apply_smooth_config
 
     local app pid
     for app in "${LOWER_PRIORITY_APPS[@]}"; do
@@ -117,6 +135,12 @@ while true; do
         start_game_mode
     elif [ -z "$pids" ] && [ -f "$ACTIVE" ]; then
         stop_game_mode
+        # El juego vuelca config.cfg al salir: espera y reaplica el perfil.
+        /bin/sleep 3
+        if [ -z "$(game_pids)" ]; then
+            apply_smooth_config
+            log "Perfil de suavidad reaplicado tras cerrar el juego."
+        fi
     fi
     /bin/sleep 5
 done
